@@ -2,8 +2,12 @@ SHELL := /bin/bash
 
 PYTHON ?= python3
 PIP    ?= pip
+WATCH_INTERVAL ?= 3.0
 
-.PHONY: help install install-user test test-cov lint check clean build scan distill watch systemd-dry-run systemd-install
+SYSTEMD_USER_DIR := $(HOME)/.config/systemd/user
+SYSTEMD_UNITS    := claudalizer.path claudalizer-watch.service
+
+.PHONY: help install install-user test test-cov lint check clean build scan distill watch systemd-dry-run systemd-install systemd-status systemd-uninstall
 
 .DEFAULT_GOAL := help
 
@@ -39,11 +43,22 @@ scan: ## Run claudalizer on-demand scan across /tmp/claude-1000
 distill: ## Distill unparsed dossiers into memory blocks
 	claudalizer distill
 
-watch: ## Run claudalizer continuous watch daemon
-	claudalizer watch --interval 5.0 --notify --auto-distill
+watch: ## Run claudalizer continuous watch daemon (WATCH_INTERVAL, default 3.0 s)
+	claudalizer watch --interval $(WATCH_INTERVAL) --notify --auto-distill
 
 systemd-dry-run: ## Preview systemd unit installation
 	claudalizer install-systemd --dry-run
 
-systemd-install: ## Install user-level systemd service and path units
+systemd-install: ## Install units, then enable the path trigger and the watch service
 	claudalizer install-systemd
+	systemctl --user daemon-reload
+	systemctl --user enable --now claudalizer.path
+	systemctl --user enable --now claudalizer-watch.service
+
+systemd-status: ## Show status of the claudalizer path and watch units
+	@systemctl --user status $(SYSTEMD_UNITS) --no-pager || true
+
+systemd-uninstall: ## Disable and remove the claudalizer user units
+	-systemctl --user disable --now $(SYSTEMD_UNITS)
+	rm -f $(addprefix $(SYSTEMD_USER_DIR)/,$(SYSTEMD_UNITS) claudalizer.service)
+	systemctl --user daemon-reload

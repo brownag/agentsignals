@@ -135,6 +135,7 @@ def handle_install_systemd(args: argparse.Namespace) -> int:
     systemd_src_dir = Path(__file__).resolve().parent.parent / "systemd"
     service_src = systemd_src_dir / "claudalizer.service"
     path_src = systemd_src_dir / "claudalizer.path"
+    watch_src = systemd_src_dir / "claudalizer-watch.service"
     tmpfiles_src = systemd_src_dir / "claudalizer-tmpfiles.conf"
 
     # Destination directories
@@ -147,6 +148,7 @@ def handle_install_systemd(args: argparse.Namespace) -> int:
     service_content = service_content.replace("%h/.local/bin/claudalizer", which_bin)
 
     path_content = path_src.read_text(encoding="utf-8")
+    watch_content = watch_src.read_text(encoding="utf-8").replace("%h/.local/bin/claudalizer", which_bin)
     tmpfiles_content = tmpfiles_src.read_text(encoding="utf-8")
 
     if args.dry_run:
@@ -155,6 +157,8 @@ def handle_install_systemd(args: argparse.Namespace) -> int:
         print(service_content.strip())
         print(f"\n--- [{user_systemd_dir / 'claudalizer.path'}] ---")
         print(path_content.strip())
+        print(f"\n--- [{user_systemd_dir / 'claudalizer-watch.service'}] ---")
+        print(watch_content.strip())
         print(f"\n--- [{user_tmpfiles_dir / 'claudalizer.conf'}] ---")
         print(tmpfiles_content.strip())
         print("\nDry-run complete. No files written.")
@@ -165,19 +169,23 @@ def handle_install_systemd(args: argparse.Namespace) -> int:
 
     dest_service = user_systemd_dir / "claudalizer.service"
     dest_path = user_systemd_dir / "claudalizer.path"
+    dest_watch = user_systemd_dir / "claudalizer-watch.service"
     dest_tmpfiles = user_tmpfiles_dir / "claudalizer.conf"
 
     dest_service.write_text(service_content, encoding="utf-8")
     dest_path.write_text(path_content, encoding="utf-8")
+    dest_watch.write_text(watch_content, encoding="utf-8")
     dest_tmpfiles.write_text(tmpfiles_content, encoding="utf-8")
 
     print(f"Installed systemd units:")
     print(f"  • {dest_service}")
     print(f"  • {dest_path}")
+    print(f"  • {dest_watch}")
     print(f"  • {dest_tmpfiles}")
     print("\nTo activate now, run:")
     print("  systemctl --user daemon-reload")
     print("  systemctl --user enable --now claudalizer.path")
+    print("  systemctl --user enable --now claudalizer-watch.service")
 
     return 0
 
@@ -214,7 +222,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # watch
     watch_p = subparsers.add_parser("watch", help="Continuous monitoring loop with file debouncing")
-    watch_p.add_argument("--interval", type=float, default=5.0, help="Polling interval in seconds")
+    watch_p.add_argument("--interval", type=float, default=3.0, help="Polling interval in seconds")
     watch_p.add_argument("--project", help="Filter by specific project slug")
     watch_p.add_argument("--notify", action="store_true", default=True, help="Send notifications upon mining")
     watch_p.add_argument("--auto-distill", action="store_true", default=True, help="Auto distill mined sessions")

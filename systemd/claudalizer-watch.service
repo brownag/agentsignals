@@ -1,0 +1,16 @@
+[Unit]
+Description=Claudalizer Continuous Session Watcher
+Documentation=https://github.com/example/claudalizer
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/claudalizer watch --notify
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+Nice=19
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=default.target
