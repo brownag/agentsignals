@@ -1,17 +1,20 @@
 # Project Goals (`planning/GOALS.md`)
 
 Last Updated: 2026-11-12
-Source State: none (magic-wand re-rank after G2 verified done; G8 decided)
+Source State: STATE_1.md (G1 closed at ff66a16; orchestration 2 drafted, awaiting approval)
 
 Intent: durable indexing of Claude session history from volatile `/tmp/claude-1000` before deletion, on Sway/Wayland, with systemd and Waybar included.
 
 ## Circled Goal (Active)
 
+- **[G5]** Compositor detection picks Sway only when Sway is running (`ipc.py:57` glob result is a generator, always truthy). It is the first task of `planning/EXECUTION_PLAN_2.md` (T2.1.1), and it gates G4.
+  - Why now: G1 is closed. Orchestration 2 (G5, G6, G7, G9) is drafted and waits for user approval.
+
+## Done (recent)
+
 - **[G1]** Every session scratchpad file is in `~/.claude-mined-memories` before `/tmp/claude-1000` is deleted, with no silent drops.
-  - Why now: unblocks G7 and G9, and it is the core durability goal. Its only open prerequisite (G8) is now decided.
-  - Exit criteria: files over the 250 KiB cap are recorded as stubs (name, size, reason) rather than dropped; the SPEC.md §4.1 and §3.1 tests for G1 exist and pass; `make check` passes.
-  - Size policy (decided): 250 KiB, the existing `MAX_SCRATCHPAD_FILE_BYTES`. Keep it no larger than necessary. Treat it as a default, not a hard rule, so it can be lowered or raised later without a redesign.
-  - First action: read `planning/SPEC.md` §4.1 and §3.1 and the scratchpad snapshot code in `claudalizer/miner.py`, then write the failing test for an oversized-file stub in `tests/test_miner.py`.
+  - Status: Done (commits `72d3ff6`, `efa23c8`, `ff66a16`; `make check` exit 0). Oversized and binary files are stubs; skipped-only sessions get a dossier; SPEC §4.1 `test_filter_oversized_scratchpad` passes.
+  - Size policy: 250 KiB (`MAX_SCRATCHPAD_FILE_BYTES`), a default that can change without a redesign.
 
 ## Sequenced Goals (Dependency DAG)
 
@@ -24,9 +27,7 @@ Intent: durable indexing of Claude session history from volatile `/tmp/claude-10
 
 ## Independent Backlog
 
-- **[G5]** Compositor detection picks Sway when Sway is running, and the glob check works (`ipc.py:42-58`).
-  - Depends on: none
-- **[G6]** systemd units are correct on install: `DirectoryNotEmpty=` is set on `claudalizer.path`. (`daemon-reload` and the watch unit are already in place.)
+- **[G6]** systemd units are correct on install: `DirectoryNotEmpty=` is set on `claudalizer.path`. (`daemon-reload` and the watch unit are already in place.) Verified missing in `systemd/claudalizer.path`.
   - Depends on: none
 - **[G11]** Duplicate setup code and dead fields are removed (`cli.py:36-66`, `cli.py:94-117`, `ipc.py:140-151`).
   - Depends on: none

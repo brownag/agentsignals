@@ -24,6 +24,12 @@ Last Updated: 2026-11-12
 | 1 | T1.1.1 Snapshot reports skipped files | done | 72d3ff6 | 15 targeted tests pass; lint 14 -> 12 (two unused test imports now used) |
 | 1 | T1.1.2 Spec and goal docs | done | 9d93cdf | acceptance greps pass (no 256 in SPEC, no L783 in GOALS, skipped_files present) |
 | 2 | T1.2.1 Skipped files in dossier | done | efa23c8 | `make check` passes (16 tests); lint still 12 pre-existing |
+| 3 | T1.3.1 SPEC §4.1 `test_filter_oversized_scratchpad` | done | ff66a16 | Added 2026-11-12 (plan 2 decision D2). Closes G1. `make check` exit 0; 17 passed; lint 12 (pre-existing). Committed on `master`, not `g1-durable-capture` (see Closeout). |
+
+## Closeout
+
+- G1 closed. Exit criteria: oversized and binary files recorded as stubs (T1.1.1); skipped-only sessions get a dossier (T1.2.1); SPEC §4.1 `test_filter_oversized_scratchpad` passes (T1.3.1).
+- Branch: all orchestration 1 commits are on `master` (`g1-durable-capture` and `g3-watch` sit at `5bf8361`, which is behind `master`). The branch in the pre-wave checklist was not used for waves 1-3.
 
 Wave 2 starts only after wave 1 is all `done`.
 

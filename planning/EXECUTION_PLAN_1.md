@@ -83,6 +83,7 @@ Base branch: `g3-watch` (new branch `g1-durable-capture` to be created from it)
 | 1 | T1.1.1 | claudalizer | `claudalizer/miner.py` (snapshot_scratchpad + its one caller), `tests/test_miner.py` | — | Yes, disjoint from T1.1.2 |
 | 1 | T1.1.2 | claudalizer | `planning/SPEC.md`, `planning/GOALS.md` | — | Yes, disjoint from T1.1.1 |
 | 2 | T1.2.1 | claudalizer | `claudalizer/miner.py` (SessionDossier, _mine_session), `tests/test_miner.py` | T1.1.1 | No (same files as T1.1.1, so separate wave) |
+| 3 | T1.3.1 | claudalizer | `tests/test_miner.py` (new `test_filter_oversized_scratchpad` only) | T1.1.1, T1.2.1 | Single task; closes G1 |
 
 Wave 1 tasks are disjoint: T1.1.1 owns the code and its tests, T1.1.2 owns the two planning docs. Wave 2 is sequenced because it edits the same two files as T1.1.1.
 
@@ -168,6 +169,36 @@ Before wave 1: create branch `g1-durable-capture` from `g3-watch` and record the
   - `pytest tests/test_miner.py -q` exits 0 with all tests passing, including the new one.
   - `pytest tests/test_miner.py -q -k "dossier or skipped"` exits 0.
 - **Commit:** `feat(miner): keep skipped scratchpad files in dossier` (code only).
+
+### T1.3.1 — SPEC §4.1 test for oversized and binary scratchpad files
+
+- **Repo:** claudalizer
+- **Files in scope**
+  - Must edit: `tests/test_miner.py` (add one test)
+  - Can create: none
+- **Depends on:** T1.1.1 (skipped reasons), T1.2.1 (dossier wiring is not used by this test, but wave 3 starts after wave 2 is done)
+- **Spec**
+  1. Add `test_filter_oversized_scratchpad` to `tests/test_miner.py`. The name is fixed by SPEC.md §4.1; do not rename it.
+  2. In a temp scratchpad, create `small.py`, `small.sh`, `small.log` (each a few bytes), `big.log` (`MAX_SCRATCHPAD_FILE_BYTES + 1` bytes of `a`), and `blob.bin` (a NUL byte followed by text).
+  3. Call `snapshot_scratchpad(src, dst)` with default size cap.
+  4. Assert `copied` equals the three small files, and that each small file exists in `dst`.
+  5. Assert `big.log` and `blob.bin` are not in `dst`.
+  6. Assert `skipped` has exactly two entries: `big.log` with reason `oversized` and `size_bytes == MAX_SCRATCHPAD_FILE_BYTES + 1`, and `blob.bin` with reason `binary`.
+- **Anchors:** `tests/test_miner.py`: `def test_snapshot_reports_skipped_files` (around line 120), the closest reference. `claudalizer/miner.py`: `MAX_SCRATCHPAD_FILE_BYTES` (line 22), `def snapshot_scratchpad` (line 281).
+- **Reference implementation:** `test_snapshot_reports_skipped_files`. Copy its fixture shape.
+- **Constraints (do not touch)**
+  - Do not change `claudalizer/miner.py`. If the test fails because the code is wrong, STOP and report. Do not fix the code in this task.
+  - Do not edit `planning/`.
+- **Acceptance (mechanical)**
+  - `pytest tests/test_miner.py -q -k filter_oversized` exits 0 with 1 passed.
+  - `pytest tests/test_miner.py -q` exits 0.
+- **Commit:** `test(miner): cover oversized and binary scratchpad filtering` (test only).
+
+## Verification at end of wave 3 (orchestrator, serial)
+
+1. `make check` exits 0. Read lint output; no findings beyond the 12 pre-existing.
+2. Confirm G1 exit criteria in GOALS.md are met: stubs for oversized and binary files, the dossier for skipped-only sessions, and the §4.1 test passing.
+3. Close G1 in GOALS.md and STATE_1.md. This unblocks orchestration 2.
 
 ## Verification at end of wave 2 (orchestrator, serial)
 
