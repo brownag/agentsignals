@@ -6,11 +6,12 @@ import os
 import shutil
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from claudalizer.distiller import MemoryDistiller
-from claudalizer.ipc import dispatch_wm_hook, notify_extraction, send_notification
+from claudalizer.ipc import dispatch_wm_hook, emit_waybar_signal, notify_extraction, send_notification
 from claudalizer.miner import (
     DEFAULT_CLAUDE_PROJECTS,
     DEFAULT_LOCK_FILE,
@@ -30,6 +31,17 @@ def setup_logging(verbose: bool = False) -> None:
         format="[%(asctime)s] [%(levelname)s] %(message)s",
         datefmt="%H:%M:%S",
     )
+
+
+def _write_mined_status(dossiers) -> None:
+    """Show the mined result, then settle back to idle so the status never sticks."""
+    now = datetime.now().strftime("%H:%M")
+    if not dossiers:
+        emit_waybar_signal(status="idle", message="No new sessions", mined_count=0)
+        return
+    slug = dossiers[-1].slug
+    emit_waybar_signal(status="extracted", message=f"Mined {slug} at {now}", mined_count=len(dossiers))
+    emit_waybar_signal(status="idle", message=f"Last mined {slug} at {now}", mined_count=0)
 
 
 def handle_scan(args: argparse.Namespace) -> int:
@@ -52,6 +64,7 @@ def handle_scan(args: argparse.Namespace) -> int:
         print(f"• Mined {d.slug}/{d.session_id} -> {len(d.tool_errors)} error(s), {len(d.scratchpad_files)} scratchpad file(s)")
         if args.notify:
             notify_extraction(d.slug, d.session_id, len(d.scratchpad_files), len(d.tool_errors))
+    _write_mined_status(dossiers)
 
     if args.auto_distill and dossiers:
         logger.info("Running automatic distillation on mined sessions...")
@@ -115,6 +128,7 @@ def handle_watch(args: argparse.Namespace) -> int:
                                 llm_endpoint=args.llm_endpoint,
                                 llm_model=args.llm_model,
                             )
+                    _write_mined_status(dossiers)
             except Exception as e:
                 logger.error(f"Error in watch cycle: {e}")
 
