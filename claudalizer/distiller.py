@@ -17,6 +17,12 @@ DEFAULT_MEMORIES_ROOT = Path.home() / ".claude-mined-memories"
 # Scratch folders created by the claudalizer's own test runs. Excluded from blind-alleys (G20).
 TEST_RUN_SCRATCH_ROOTS = ("g3-accept", "rewrite-check")
 
+# A friction line shows the first output line containing one of these; entries with none are dropped (G21).
+ERROR_MARKERS = (
+    "FAILED", "Error", "error:", "error[", "Traceback", "panicked",
+    "Exception", "command not found", "No such file",
+)
+
 DISTILLATION_SYSTEM_PROMPT = """You are a software engineering memory synthesizer.
 Your task is to analyze raw debugging sessions, tool friction, command failures, discarded spikes, and scratchpad scripts from an AI coding agent.
 Synthesize actionable, durable memory rules formatted for future agent sessions.
@@ -141,22 +147,30 @@ def synthesize_offline_memory_block(dossier_data: Dict[str, Any]) -> str:
         "### 1. Tool / Skill Friction",
     ]
 
-    if errors:
-        seen_cmds = set()
-        for err in errors:
-            cmd = (err.get("command_or_input") or "").strip()
-            tool = err.get("tool_name") or "Tool"
-            out = (err.get("error_output") or "").strip().split("\n")[0]
-            exit_code = err.get("exit_code")
+    friction_lines = []
+    seen_cmds = set()
+    for err in errors:
+        cmd = (err.get("command_or_input") or "").strip()
+        tool = err.get("tool_name") or "Tool"
+        error_line = next(
+            (
+                ln.strip()
+                for ln in (err.get("error_output") or "").split("\n")
+                if any(marker in ln for marker in ERROR_MARKERS)
+            ),
+            None,
+        )
+        if error_line is None:
+            continue
 
-            key = (tool, cmd)
-            if key in seen_cmds:
-                continue
-            seen_cmds.add(key)
+        key = (tool, cmd)
+        if key in seen_cmds:
+            continue
+        seen_cmds.add(key)
 
-            lines.append(f"- **{tool}** (`{cmd[:80]}`): Exit code {exit_code}. First line: `{out[:120]}`")
-    else:
-        lines.append("- None detected.")
+        friction_lines.append(f"- **{tool}** (`{cmd[:80]}`): {error_line[:200]}")
+
+    lines.extend(friction_lines or ["- None detected."])
 
     lines.extend(["", "### 2. Blind Alleys & Discarded Spikes"])
     kept_scratch = [s for s in scratchpads if s.split("/", 1)[0] not in TEST_RUN_SCRATCH_ROOTS]

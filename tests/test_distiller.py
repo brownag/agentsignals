@@ -9,7 +9,6 @@ Every test uses tmp_path for the memories root and never makes a network call.
 
 import json
 
-import pytest
 
 import claudalizer.distiller as distiller_mod
 from claudalizer.distiller import MemoryDistiller, build_synthesis_prompt, synthesize_offline_memory_block
@@ -177,7 +176,7 @@ def test_rebuild_changes_only_the_redistilled_session_text(tmp_path):
         slug="-slug-a",
         session_id="aaaa1111-0001",
         scan_timestamp="2026-01-01",
-        tool_errors=[{"tool_name": "Bash", "command_or_input": "make NEWA", "error_output": "Exit code 2", "exit_code": 2}],
+        tool_errors=[{"tool_name": "Bash", "command_or_input": "make NEWA", "error_output": "Error: NEWA failed", "exit_code": 2}],
     )
     (root / "-slug-a" / "aaaa1111-0001" / "dossier.json").write_text(json.dumps(dossier_a), encoding="utf-8")
     distiller.distill_session("-slug-a", "aaaa1111-0001", force=True)
@@ -280,7 +279,6 @@ def test_scratch_outside_test_runs_is_kept():
     assert "g3-accept/lock" not in blind
 
 
-@pytest.mark.xfail(strict=True, reason="G21: friction lines show the real error text")
 def test_friction_line_shows_real_error_text():
     # First output line is a bare exit code; the real error is on the second line.
     dossier = _dossier(
@@ -296,3 +294,21 @@ def test_friction_line_shows_real_error_text():
     block = synthesize_offline_memory_block(dossier)
     friction = _section(block, "### 1. Tool / Skill Friction")
     assert "FAILED tests/x.py::test_y - AssertionError" in friction
+
+
+def test_friction_entry_without_error_marker_is_dropped():
+    dossier = _dossier(
+        tool_errors=[
+            {
+                "tool_name": "Bash",
+                "command_or_input": "make build",
+                "error_output": "Exit code 2\nsome code line",
+                "exit_code": 2,
+            }
+        ]
+    )
+    block = synthesize_offline_memory_block(dossier)
+    friction = _section(block, "### 1. Tool / Skill Friction")
+    assert "- None detected." in friction
+    assert "Exit code 2" not in friction
+    assert "some code line" not in friction
