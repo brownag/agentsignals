@@ -21,7 +21,7 @@ from claudalizer.ipc import detect_compositor, emit_waybar_signal
 from claudalizer.cli import main as cli_main
 
 
-def test_decode_slug():
+def test_slug_decoding(tmp_path):
     # Valid absolute system path
     slug = "-home-andrew-AI-claudalizer"
     decoded = decode_slug(slug)
@@ -32,6 +32,26 @@ def test_decode_slug():
     non_existent = "-some-nonexistent-deep-nested-path"
     decoded_fallback = decode_slug(non_existent)
     assert decoded_fallback == "/some/nonexistent/deep/nested/path"
+
+    # Real directories under tmp_path: decode_slug resolves against the filesystem,
+    # so the slug is built from the real path (Claude Code replaces "/" with "-").
+    def slug_for(path: Path) -> str:
+        return "-" + str(path).lstrip("/").replace("/", "-")
+
+    # Multiple dashes inside one directory name
+    multi_dash = tmp_path / "my-pkg-v2"
+    multi_dash.mkdir()
+    assert decode_slug(slug_for(multi_dash)) == str(multi_dash)
+
+    # Nested path with dashes in several segments
+    nested = tmp_path / "work" / "src-lib" / "my-pkg"
+    nested.mkdir(parents=True)
+    assert decode_slug(slug_for(nested)) == str(nested)
+
+    # Trailing dash in the directory name
+    trailing = tmp_path / "proj-"
+    trailing.mkdir()
+    assert decode_slug(slug_for(trailing)) == str(trailing)
 
 
 def test_is_git_discernable():
@@ -82,6 +102,25 @@ def test_git_state_filtering(tmp_path):
     assert "git-fail" in kept
     assert "exit-zero" not in kept
     assert "git-ok" not in kept
+
+
+def test_jsonl_corrupt_recovery(tmp_path):
+    transcript_file = tmp_path / "session-corrupt.jsonl"
+    valid_first = json.dumps(
+        {"type": "user", "message": {"content": "First valid prompt that is long enough."}}
+    ).encode("utf-8")
+    valid_second = json.dumps(
+        {"type": "user", "message": {"content": "Second valid prompt after the damage."}}
+    ).encode("utf-8")
+    half_written = b'{"type": "user", "message": {"content": "half'
+    truncated = b'{"type": "us'
+    not_utf8 = b"\xff\xfe"
+    transcript_file.write_bytes(b"\n".join([valid_first, half_written, truncated, not_utf8, valid_second]) + b"\n")
+
+    prompts, _ = parse_transcript_events(transcript_file)
+
+    assert "First valid prompt that is long enough." in prompts
+    assert "Second valid prompt after the damage." in prompts
 
 
 def test_transcript_parsing(tmp_path):
