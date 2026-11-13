@@ -1,7 +1,7 @@
 # Project Goals (`planning/GOALS.md`)
 
 Last Updated: 2026-11-12
-Source State: STATE_6.md (orchestration 6: G18 done; G19 circled). Focus: PROJECT_MEMORY.md quality.
+Source State: STATE_7.md (orchestration 7: G19 done; circled slot open). Focus: PROJECT_MEMORY.md quality.
 
 Intent: durable indexing of Claude session history from volatile `/tmp/claude-1000` before deletion, on Sway/Wayland, with systemd and Waybar included. Current focus: the mined per-project memory (`~/.claude-mined-memories/<slug>/PROJECT_MEMORY.md`) is correct, derived, and worth reading.
 
@@ -16,11 +16,7 @@ Evidence (2026-11-12, `~/.claude-mined-memories`): 8 project files, 22 sections;
 
 ## Circled Goal (Active)
 
-- **[G19]** Directives come from the session only. The generic fallback is removed.
-  - Why here: 17 of 22 sections carry the same line. It is noise, and it hides the sections that do have content.
-  - Exit criteria: with no matching error, the section reads "None detected", not the fallback line. The G15 fallback test turns from `xfail` to pass.
-  - Depends on: none (G18 done). Same file as G21; G21 follows it.
-  - Files in scope: `claudalizer/distiller.py` (`synthesize_offline_memory_block`, the directives block), `tests/test_distiller.py`.
+_(none; G19 is done. G20 and G21 are ready. Choose the next circled goal.)_
 
 ## Sequenced Goals (Dependency DAG)
 
@@ -33,7 +29,7 @@ Evidence (2026-11-12, `~/.claude-mined-memories`): 8 project files, 22 sections;
 - **[G21]** Tool-friction lines show the failing command and its real error text, not a bare exit code and first line.
   - Why here: most entries are "Exit code 2" with a first line that says nothing about the failure.
   - Exit criteria: a test with a failing `pytest` call shows the error line from its output. Entries with no error text are dropped, not printed as "Exit code N".
-  - Depends on: G19 (same section of the generator).
+  - Depends on: none (G19 done). Same section of the generator as G20 if run after it.
   - Files in scope: `claudalizer/distiller.py` (friction section), `tests/test_distiller.py`.
 
 - **[G16]** `--notify` and `--auto-distill` can be turned off from the CLI.
@@ -66,6 +62,8 @@ Evidence (2026-11-12, `~/.claude-mined-memories`): 8 project files, 22 sections;
 
 ## Done
 
+- **[G19]** Directives come from the session only. The generic fallback is removed.
+  - Status: Done (orchestration 7, `planning/STATE_7.md`). `579b758` writes `- None detected.` when no error matches a pattern or there are no errors. SPEC `planning` commit follows. `make test` 56 passed, 2 xfailed. Real PROJECT_MEMORY.md files show the old fallback until the next distill.
 - **[G18]** PROJECT_MEMORY.md is rebuilt from the session `memory.md` files, not appended to.
   - Status: Done (orchestration 6, `planning/STATE_6.md`). `c5162a6` rebuilds the file after each distill, ordered by `scan_timestamp`, written atomically. `make test` 54 passed, 3 xfailed. The G18 duplicate test is no longer xfail. Hand edits to PROJECT_MEMORY.md are overwritten by design (user accepted).
 - **[G15]** SPEC §4.2 (distiller) is specified and tested, including the PROJECT_MEMORY.md format.
