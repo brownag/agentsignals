@@ -33,7 +33,7 @@ Evidence (2026-11-12, `~/.claude-mined-memories`): 8 project files, 22 sections;
 - **[G20]** Blind-alleys excludes the claudalizer's own test scratch and lists only real work.
   - Why here: the current list is mostly test-run files from the claudalizer's own suite and `g3-accept` runs.
   - Exit criteria: a session whose scratchpad holds only test-run files (under a `g3-accept` / `rewrite-check` / `tmp_path`-style path) yields "No ephemeral scratchpads recorded." A test covers it.
-  - Depends on: G15. Same file as G18–G19; serialise after G19.
+  - Depends on: none (G15 done). Same file as G18–G19; serialise after G19.
   - Files in scope: `claudalizer/distiller.py` (scratchpad listing), `claudalizer/miner.py` only if the filter belongs there, `tests/test_distiller.py`.
 
 - **[G21]** Tool-friction lines show the failing command and its real error text, not a bare exit code and first line.
