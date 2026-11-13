@@ -23,7 +23,7 @@ Last Updated: 2026-11-12
 
 | Wave | Task | Status | Code commit(s) | Notes |
 | --- | --- | --- | --- | --- |
-| 1 | T6.1.1 Replace session section in place; remove G18 xfail; add tests | pending | | expect 53 passed, 3 xfailed after |
+| 1 | T6.1.1 Rebuild PROJECT_MEMORY.md from session files; remove G18 xfail; add tests | pending | | expect 53 passed, 3 xfailed after |
 | 2 | T6.2.1 Update SPEC §3.2 and §4.2 to the rebuild rule | pending | | planning only |
 
 Wave 2 starts only after wave 1 is all `done`.
