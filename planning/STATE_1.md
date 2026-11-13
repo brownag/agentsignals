@@ -50,3 +50,13 @@ _Workers append here under `## <task id>` (15 lines max each)._
 - Files: `planning/SPEC.md` (§3.1 skipped_files and skipped_count; §4.1 bullet; 256 KB → 250 KiB at line 73 and the test block); `planning/GOALS.md` (L783-786 → §4.1/§3.1 at G1 and G9).
 - Acceptance: `grep 256 planning/SPEC.md` empty; `grep L783 planning/GOALS.md` empty; `grep skipped_files planning/SPEC.md` 3 matches.
 - Deviations: none.
+
+## 1.2.1
+
+- Status: done (wave 2). Plan approved; micro-TODO at `planning/tasks/1.2.1.todo.md`. distiller.py check: no strict `dossier_data[...]` lookups, so distiller.py was not edited.
+- Code commit: efa23c8 `feat(miner): keep skipped scratchpad files in dossier`.
+- Files: `claudalizer/miner.py` (`SessionDossier.skipped_files`; `_mine_session` keeps skipped-only sessions; `stats.skipped_count`); `tests/test_miner.py` (new `test_session_with_only_skipped_file_gets_dossier`).
+- Tests: `pytest tests/test_miner.py -q` → 16 passed. Wave-end `make check` → exit 0, 16 passed.
+- Lint: 12 findings, all pre-existing (no new).
+- Deviations: none.
+- Note for G1 closeout: SPEC §4.1 names `test_filter_oversized_scratchpad`, but no test has that name. The behavior is covered by `test_snapshot_reports_skipped_files` (T1.1.1) and `test_session_with_only_skipped_file_gets_dossier` (T1.2.1).
