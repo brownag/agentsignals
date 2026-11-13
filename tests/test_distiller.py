@@ -390,3 +390,28 @@ def test_resolve_llm_settings_no_endpoint_is_none(monkeypatch):
     args = argparse.Namespace(llm_endpoint=None, llm_model="llama3")
 
     assert resolve_llm_settings(args)[0] is None
+
+
+# --- Session objective line in the offline block (orchestration 9, T9.2.1) -------------
+
+
+def test_objective_is_first_real_request():
+    block = synthesize_offline_memory_block(
+        _dossier(user_prompts=["hi", "Build the scan report and check it"])
+    )
+    assert "**Objective:** Build the scan report and check it" in block
+
+
+def test_objective_truncated_to_300_chars_with_ellipsis():
+    long_prompt = "word " * 100  # 500 characters
+    block = synthesize_offline_memory_block(_dossier(user_prompts=[long_prompt]))
+    line = next(text_line for text_line in block.splitlines() if text_line.startswith("**Objective:**"))
+    text = line[len("**Objective:** "):]
+    assert text.endswith("…")
+    assert len(text) == 301
+
+
+def test_objective_not_captured_when_no_prompts():
+    block = synthesize_offline_memory_block(_dossier(user_prompts=[]))
+    assert "**Objective:** not captured." in block
+    assert block.count("### ") == 3

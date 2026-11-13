@@ -142,16 +142,35 @@ def call_llm_completion(
     return None
 
 
+OBJECTIVE_MAX_CHARS = 300
+OBJECTIVE_MIN_PROMPT_CHARS = 15  # same threshold as the miner's MIN_PROMPT_LENGTH
+
+
+def _session_objective(prompts: List[str]) -> str:
+    """First real request of the session, one line, truncated. The session's purpose in the memory block."""
+    for prompt in prompts or []:
+        stripped = str(prompt).strip()
+        if len(stripped) < OBJECTIVE_MIN_PROMPT_CHARS:
+            continue
+        text = " ".join(stripped.split())
+        if len(text) > OBJECTIVE_MAX_CHARS:
+            return text[:OBJECTIVE_MAX_CHARS] + "…"
+        return text
+    return "not captured."
+
+
 def synthesize_offline_memory_block(dossier_data: Dict[str, Any]) -> str:
     """Generate structured markdown memory block deterministically offline without LLM."""
     errors = dossier_data.get("tool_errors", [])
     scratchpads = dossier_data.get("scratchpad_files", [])
     slug = dossier_data.get("slug", "unknown")
     decoded = dossier_data.get("decoded_path", slug)
+    objective = _session_objective(dossier_data.get("user_prompts", []))
 
     lines = [
         f"# Mined Behavioral Memory for `{slug}`",
         f"**Source Directory:** `{decoded}`",
+        f"**Objective:** {objective}",
         "",
         "### 1. Tool / Skill Friction",
     ]
