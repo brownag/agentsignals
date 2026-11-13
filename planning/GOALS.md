@@ -1,7 +1,7 @@
 # Project Goals (`planning/GOALS.md`)
 
 Last Updated: 2026-11-12
-Source State: STATE_5.md (orchestration 5: G15 done; G18 circled). Focus: PROJECT_MEMORY.md quality.
+Source State: STATE_6.md (orchestration 6: G18 done; G19 circled). Focus: PROJECT_MEMORY.md quality.
 
 Intent: durable indexing of Claude session history from volatile `/tmp/claude-1000` before deletion, on Sway/Wayland, with systemd and Waybar included. Current focus: the mined per-project memory (`~/.claude-mined-memories/<slug>/PROJECT_MEMORY.md`) is correct, derived, and worth reading.
 
@@ -16,19 +16,13 @@ Evidence (2026-11-12, `~/.claude-mined-memories`): 8 project files, 22 sections;
 
 ## Circled Goal (Active)
 
-- **[G18]** PROJECT_MEMORY.md is rebuilt from the session `memory.md` files, not appended to.
-  - Why here: fixes the duplicate-on-`--force` risk and keeps the file in sync with the session files it summarises.
-  - Exit criteria: distilling the same session twice with `--force` leaves one section for it. The G15 duplicate test turns from `xfail` to pass. `make test` passes.
-  - Depends on: none. G15 is done; the duplicate test exists as a strict xfail in `tests/test_distiller.py`.
-  - Files in scope: `claudalizer/distiller.py` (`_append_to_project_memory`, `distill_session`), `tests/test_distiller.py`.
-
-## Sequenced Goals (Dependency DAG)
-
 - **[G19]** Directives come from the session only. The generic fallback is removed.
   - Why here: 17 of 22 sections carry the same line. It is noise, and it hides the sections that do have content.
   - Exit criteria: with no matching error, the section reads "None detected", not the fallback line. The G15 fallback test turns from `xfail` to pass.
-  - Depends on: G18 (same function; do after it, not in parallel).
+  - Depends on: none (G18 done). Same file as G21; G21 follows it.
   - Files in scope: `claudalizer/distiller.py` (`synthesize_offline_memory_block`, the directives block), `tests/test_distiller.py`.
+
+## Sequenced Goals (Dependency DAG)
 
 - **[G20]** Blind-alleys excludes the claudalizer's own test scratch and lists only real work.
   - Why here: the current list is mostly test-run files from the claudalizer's own suite and `g3-accept` runs.
@@ -61,6 +55,8 @@ Evidence (2026-11-12, `~/.claude-mined-memories`): 8 project files, 22 sections;
 
 ## Deferred
 
+- **[G22]** Hand-written notes survive rebuilds and reach Claude through a standard injection format.
+  - Trigger: you need to write notes by hand that must persist. Today a rebuild discards hand edits (G18, by design). The likely shape is a separate durable file that the distiller reads, not an edit to PROJECT_MEMORY.md.
 - **[G10]** Distillation LLM client matches the spec (auth, temperature, endpoint, retry).
   - Trigger: a local LLM endpoint is in use. Relevant to the focus: the LLM path is the one that writes most of the memory text, and it is not yet tested.
 - **[G13]** Extract history from `/tmp/claude-1000/bash-edit-diff/` (bare git repositories whose objects hold earlier versions of edited files). Needs a new extractor; a slug-filter change alone captures nothing.
@@ -70,6 +66,8 @@ Evidence (2026-11-12, `~/.claude-mined-memories`): 8 project files, 22 sections;
 
 ## Done
 
+- **[G18]** PROJECT_MEMORY.md is rebuilt from the session `memory.md` files, not appended to.
+  - Status: Done (orchestration 6, `planning/STATE_6.md`). `c5162a6` rebuilds the file after each distill, ordered by `scan_timestamp`, written atomically. `make test` 54 passed, 3 xfailed. The G18 duplicate test is no longer xfail. Hand edits to PROJECT_MEMORY.md are overwritten by design (user accepted).
 - **[G15]** SPEC §4.2 (distiller) is specified and tested, including the PROJECT_MEMORY.md format.
   - Why now: every fix to the project memory changes `claudalizer/distiller.py`. Without tests that pin the current behaviour and the target behaviour, the fixes can't be checked. This goal unblocks G18–G21.
   - Status: Done (orchestration 5: `e51e29d` SPEC §3.2/§4.2; `eb8e5da` `tests/test_distiller.py`, 8 passed and 4 strict xfail for G18–G21; `make test` 48 passed, 4 xfailed).
