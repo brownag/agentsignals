@@ -5,6 +5,7 @@ ConditionPathExists=/tmp/claude-1000
 
 [Path]
 PathModified=/tmp/claude-1000
+DirectoryNotEmpty=/tmp/claude-1000
 Unit=claudalizer.service
 
 [Install]
