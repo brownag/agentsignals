@@ -109,12 +109,43 @@ def test_snapshot_scratchpad(tmp_path):
     venv_file.parent.mkdir(parents=True)
     venv_file.write_text("echo", encoding="utf-8")
 
-    copied = snapshot_scratchpad(src_dir, dest_dir)
+    copied, _ = snapshot_scratchpad(src_dir, dest_dir)
     assert "test_spike.py" in copied
     assert "binary.dat" not in copied
     assert "large.txt" not in copied
     assert not any("venv" in c for c in copied)
     assert (dest_dir / "test_spike.py").exists()
+
+
+def test_snapshot_reports_skipped_files(tmp_path, monkeypatch):
+    src_dir = tmp_path / "scratchpad"
+    dest_dir = tmp_path / "mined"
+    src_dir.mkdir()
+    (src_dir / "ok.txt").write_text("fine", encoding="utf-8")
+    (src_dir / "big.txt").write_bytes(b"a" * (255 * 1024))
+    (src_dir / "bin.dat").write_bytes(b"\x00\x01")
+    (src_dir / "locked.txt").write_text("secret", encoding="utf-8")
+    (src_dir / "venv").mkdir()
+    (src_dir / "venv" / "x.txt").write_text("x", encoding="utf-8")
+
+    real_copy2 = shutil.copy2
+
+    def fake_copy2(src, dst, *a, **k):
+        if Path(src).name == "locked.txt":
+            raise PermissionError("denied")
+        return real_copy2(src, dst, *a, **k)
+
+    monkeypatch.setattr(miner_module.shutil, "copy2", fake_copy2)
+
+    copied, skipped = snapshot_scratchpad(src_dir, dest_dir)
+    reasons = {s["path"]: s["reason"] for s in skipped}
+    assert reasons == {"big.txt": "oversized", "bin.dat": "binary", "locked.txt": "unreadable"}
+    sizes = {s["path"]: s["size_bytes"] for s in skipped}
+    assert sizes["big.txt"] == 255 * 1024
+    assert copied == ["ok.txt"]
+    assert not (dest_dir / "big.txt").exists()
+    assert not (dest_dir / "bin.dat").exists()
+    assert not (dest_dir / "locked.txt").exists()
 
 
 def test_file_lock(tmp_path):

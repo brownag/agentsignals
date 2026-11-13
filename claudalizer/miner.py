@@ -282,11 +282,16 @@ def snapshot_scratchpad(
     src_scratchpad_dir: Path,
     dest_scratchpad_dir: Path,
     max_file_size: int = MAX_SCRATCHPAD_FILE_BYTES,
-) -> List[str]:
-    """Snapshot non-binary, bounded ephemeral files from scratchpad directory."""
+) -> Tuple[List[str], List[Dict[str, Any]]]:
+    """Snapshot non-binary, bounded ephemeral files from scratchpad directory.
+
+    Returns (copied, skipped). Each skipped entry has path, size_bytes and a reason of
+    "oversized", "binary" or "unreadable". Symlinks and excluded directories are silent.
+    """
     copied_files: List[str] = []
+    skipped: List[Dict[str, Any]] = []
     if not src_scratchpad_dir.exists() or not src_scratchpad_dir.is_dir():
-        return copied_files
+        return copied_files, skipped
 
     dest_scratchpad_dir.mkdir(parents=True, exist_ok=True)
 
@@ -294,22 +299,24 @@ def snapshot_scratchpad(
         if not item.is_file() or item.is_symlink():
             continue
 
+        rel_path = item.relative_to(src_scratchpad_dir)
+        # Skip python venvs, git repos, or node_modules nested in scratchpads
+        if any(p in ("venv", ".venv", "node_modules", ".git", "__pycache__") for p in rel_path.parts):
+            continue
+
+        rel = rel_path.as_posix()
+        sz: Optional[int] = None
         try:
             sz = item.stat().st_size
             if sz > max_file_size:
-                continue
-
-            rel_path = item.relative_to(src_scratchpad_dir)
-            # Skip python venvs, git repos, or node_modules nested in scratchpads
-            parts = rel_path.parts
-            if any(p in ("venv", ".venv", "node_modules", ".git", "__pycache__") for p in parts):
+                skipped.append({"path": rel, "size_bytes": sz, "reason": "oversized"})
                 continue
 
             # Read first 1024 bytes to check for null bytes (binary check)
             with open(item, "rb") as f_check:
                 chunk = f_check.read(1024)
                 if b"\x00" in chunk:
-                    # Skip binary files
+                    skipped.append({"path": rel, "size_bytes": sz, "reason": "binary"})
                     continue
 
             target_file = dest_scratchpad_dir / rel_path
@@ -317,9 +324,9 @@ def snapshot_scratchpad(
             shutil.copy2(item, target_file)
             copied_files.append(str(rel_path))
         except (OSError, PermissionError):
-            continue
+            skipped.append({"path": rel, "size_bytes": sz, "reason": "unreadable"})
 
-    return copied_files
+    return copied_files, skipped
 
 
 class SessionMiner:
@@ -412,7 +419,7 @@ class SessionMiner:
 
         # Snapshot scratchpad files
         dest_scratchpad = dossier_dir / "scratchpad"
-        copied_files = snapshot_scratchpad(scratchpad_dir, dest_scratchpad)
+        copied_files, _ = snapshot_scratchpad(scratchpad_dir, dest_scratchpad)
 
         # If nothing behavioral was found (no prompts, no errors, no scratchpad), skip empty dossier
         if not user_prompts and not tool_errors and not copied_files:
