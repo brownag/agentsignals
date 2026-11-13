@@ -49,7 +49,7 @@ def detect_compositor() -> Optional[str]:
         return "sway"
 
     # Fallback checks by binary availability if socket might be set elsewhere
-    if shutil.which("swaymsg") and (os.environ.get("SWAYSOCK") or Path(f"/run/user/{os.getuid()}").glob("sway-ipc.*.sock")):
+    if shutil.which("swaymsg") and (os.environ.get("SWAYSOCK") or any(Path(f"/run/user/{os.getuid()}").glob("sway-ipc.*.sock"))):
         return "sway"
     if shutil.which("hyprctl") and os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
         return "hyprland"
