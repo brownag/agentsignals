@@ -353,6 +353,11 @@ class SessionMiner:
         self.claude_projects = Path(claude_projects)
         self.memories_root = Path(memories_root)
         self.lock_file = Path(lock_file)
+        self.skipped = self._empty_skips()
+
+    @staticmethod
+    def _empty_skips() -> Dict[str, Any]:
+        return {"active": [], "up_to_date": 0, "no_content": 0}
 
     def scan_and_mine(
         self,
@@ -360,8 +365,14 @@ class SessionMiner:
         force: bool = False,
         target_slug: Optional[str] = None,
     ) -> List[SessionDossier]:
-        """Scan tmp_root and extract all found sessions."""
+        """Scan tmp_root and extract all found sessions.
+
+        self.skipped is reset on each call and records why sessions were not mined:
+        "active" (still changing, debounce), "up_to_date" (dossier already current), and
+        "no_content" (nothing behavioural to record).
+        """
         dossiers: List[SessionDossier] = []
+        self.skipped = self._empty_skips()
 
         if not self.tmp_root.exists():
             logger.info(f"Tmp root {self.tmp_root} does not exist.")
@@ -395,6 +406,7 @@ class SessionMiner:
                         # Check if session dir is still active
                         if not is_file_settled(session_dir, SETTLE_DEBOUNCE_SECONDS):
                             logger.debug(f"Session {session_id} not settled yet. Skipping.")
+                            self.skipped["active"].append(f"{slug}/{session_id}")
                             continue
 
                     dossier = self._mine_session(slug, decoded, session_id, scratchpad_dir, force=force)
@@ -415,15 +427,21 @@ class SessionMiner:
         dossier_dir = self.memories_root / slug / session_id
         dossier_json = dossier_dir / "dossier.json"
 
-        if dossier_json.exists() and not force:
-            if not scratchpad_changed_since(scratchpad_dir, dossier_json):
-                logger.debug(f"Dossier {dossier_json} already up to date. Skipping.")
-                return None
-            logger.info(f"Scratchpad for {slug}/{session_id} changed since last mine. Re-mining.")
-
         # Cross-reference with persistent JSONL transcript
         transcript_path = self.claude_projects / slug / f"{session_id}.jsonl"
         transcript_found = transcript_path.exists()
+
+        if dossier_json.exists() and not force:
+            # Prompts and tool errors come from the transcript, so a transcript change
+            # alone must trigger a re-mine (not only a scratchpad change).
+            changed = scratchpad_changed_since(scratchpad_dir, dossier_json) or (
+                transcript_found and transcript_path.stat().st_mtime > dossier_json.stat().st_mtime
+            )
+            if not changed:
+                logger.debug(f"Dossier {dossier_json} already up to date. Skipping.")
+                self.skipped["up_to_date"] += 1
+                return None
+            logger.info(f"Session {slug}/{session_id} changed since last mine. Re-mining.")
 
         user_prompts, tool_errors = parse_transcript_events(transcript_path)
 
@@ -433,6 +451,7 @@ class SessionMiner:
 
         # If nothing behavioral was found (no prompts, no errors, no scratchpad or skipped files), skip empty dossier
         if not user_prompts and not tool_errors and not copied_files and not skipped_files:
+            self.skipped["no_content"] += 1
             return None
 
         dossier = SessionDossier(

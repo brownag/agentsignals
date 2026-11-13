@@ -45,6 +45,19 @@ def _write_mined_status(dossiers) -> None:
     emit_waybar_signal(status="idle", message=f"Last mined {slug} at {now}", mined_count=0)
 
 
+def format_skip_summary(skipped: dict) -> str:
+    """One-line account of sessions a scan did not mine, plus the still-active ones by name."""
+    active = skipped.get("active", [])
+    lines = [
+        f"Skipped: {len(active)} active (still changing; picked up on a later scan), "
+        f"{skipped.get('up_to_date', 0)} already up to date, "
+        f"{skipped.get('no_content', 0)} with no content."
+    ]
+    for name in active:
+        lines.append(f"  • still active: {name}")
+    return "\n".join(lines)
+
+
 def handle_scan(args: argparse.Namespace) -> int:
     miner = SessionMiner(
         tmp_root=Path(args.tmp_root),
@@ -65,6 +78,7 @@ def handle_scan(args: argparse.Namespace) -> int:
         print(f"• Mined {d.slug}/{d.session_id} -> {len(d.tool_errors)} error(s), {len(d.scratchpad_files)} scratchpad file(s)")
         if args.notify:
             notify_extraction(d.slug, d.session_id, len(d.scratchpad_files), len(d.tool_errors))
+    print(format_skip_summary(miner.skipped))
     _write_mined_status(dossiers)
 
     if args.auto_distill and dossiers:

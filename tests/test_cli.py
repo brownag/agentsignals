@@ -17,7 +17,7 @@ def _scan_args(tmp_path):
 def _fake_miner(dossiers):
     class FakeMiner:
         def __init__(self, **kwargs):
-            pass
+            self.skipped = {"active": [], "up_to_date": 0, "no_content": 0}
 
         def scan_and_mine(self, **kwargs):
             return dossiers
