@@ -1,7 +1,7 @@
 # Orchestration 4 State (`planning/STATE_4.md`)
 
 Plan: `planning/EXECUTION_PLAN_4.md` (G14 Waybar refresh signal is safe)
-Status: Running. Wave 1 done. Wave 2 in progress.
+Status: Done. Wave 1 and wave 2 complete (path=survives).
 Last Updated: 2026-11-12
 
 ## Pre-wave checklist
@@ -26,7 +26,7 @@ Last Updated: 2026-11-12
 | Wave | Task | Status | Code commit(s) | Notes |
 | --- | --- | --- | --- | --- |
 | 1 | T4.1.1 Headless probe of RTMIN+8 and SIGUSR2 | done | none (planning only) | path=survives |
-| 2 | T4.2.1 Survives path: close R1 and G14 | pending | | runs: path=survives |
+| 2 | T4.2.1 Survives path: close R1 and G14 | done | none (planning only: `edb3cba`) | path=survives |
 | 2 | T4.2.2 Kill path: refresh with SIGUSR2 | skipped (probe result) | | path=kills only |
 
 Wave 2 starts only after wave 1 is all `done`. Exactly one wave-2 task runs; the other is marked `skipped (probe result)`.
@@ -34,6 +34,14 @@ Wave 2 starts only after wave 1 is all `done`. Exactly one wave-2 task runs; the
 Live check (user-run, not a gate): G4 refresh timing with the module added per README. Record the result here when the user reports it.
 
 ## Task reports
+
+## T4.2.1
+
+Status: done (`edb3cba`, planning only). GOALS.md: G14 moved to Done with the probe result; G4 circled (Depends on: none). EXECUTION_PLAN_3.md: R1 Closed; D12 added. `make test` 29 passed. No code, test, or README changes.
+
+## T4.2.2
+
+Status: skipped (probe result path=survives; D2 kill path not taken).
 
 ## T4.1.1
 
