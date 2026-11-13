@@ -138,16 +138,16 @@ Each distilled session writes two things:
 
 The block starts with `# Mined Behavioral Memory for <slug>` and a `**Source Directory:**` line, then three sections in this order:
 
-1. `### 1. Tool / Skill Friction`: one line per failing tool call, or `- None detected.` when there are none. Target rule for the line content: see G21 below.
-2. `### 2. Blind Alleys & Discarded Spikes`: one line per scratchpad file, or `- No ephemeral scratchpads recorded.`
+1. `### 1. Tool / Skill Friction`: one line per failing tool call, in the form `- **{tool}** (`{command}`): {first output line containing an error marker}`. Markers: `FAILED`, `Error`, `error:`, `error[`, `Traceback`, `panicked`, `Exception`, `command not found`, `No such file`. A call with no such line is dropped. If none remain, `- None detected.`. Repeated commands are shown once.
+2. `### 2. Blind Alleys & Discarded Spikes`: one line per scratchpad file, except scratch whose first path segment is `g3-accept` or `rewrite-check` (the claudalizer's own test runs), which is excluded. If none remain, `- No ephemeral scratchpads recorded.`
 3. `### 3. Directives for CLAUDE.md`: directives inferred from the tool errors. Three error patterns are matched (a missing Python environment, a missing binary, a Cargo error). When no error matches, or there are no errors, the section is `- None detected.`. The directives come only from the session; no boilerplate is written.
 
 #### **PROJECT\_MEMORY.md format**
 
 * Each session adds one section: a blank line, `---`, then the heading `## Session <first 8 characters of session id> Distillation`, then the session's block.
 * One section per session. Sections are ordered by the dossier's `scan_timestamp`, then session id. A session directory without both `dossier.json` and `memory.md` is left out. Distilling the same session again with `force` rebuilds the file, so it still has exactly one section for that session.
-* Target rule for blind-alleys **(target, G20)**: scratchpad paths that come from the claudalizer's own test runs (`g3-accept`, `rewrite-check`) are dropped. If nothing else remains, the line is `- No ephemeral scratchpads recorded.`
-* Target rule for friction lines **(target, G21)**: each line names the failing command and its first error line. A failing call with no error text is dropped, not written as a bare `Exit code N` line.
+* Blind-alleys rule: scratch whose first path segment is `g3-accept` or `rewrite-check` is dropped (the claudalizer's own test runs). If nothing else remains, the line is `- No ephemeral scratchpads recorded.`
+* Friction-line rule: each line names the failing command and its first error-marker line. A failing call with no such line is dropped, not written as a bare `Exit code N` line.
 
 #### **Control flow**
 
@@ -224,8 +224,10 @@ Target behaviour (marked `xfail(strict=True)` with the goal id in the reason; ea
 > * **test\_rebuild\_discards\_hand\_edits\_outside\_session\_files**: Text written by hand into PROJECT\_MEMORY.md is gone after a distill.
 > * **test\_no\_matching\_error\_shows\_none\_detected\_not\_fallback\_directive**: With no tool errors, the directives section says `None detected` and does not contain `Maintain strict idempotency`.
 > * **test\_directives\_none\_detected\_when\_errors\_match\_no\_pattern**: With a tool error that matches no pattern, the directives section is `- None detected.`.
-> * **test\_test\_runner\_scratch\_excluded\_from\_blind\_alleys** (G20): Scratchpad paths under `g3-accept/` and `rewrite-check/` do not appear in blind-alleys.
-> * **test\_friction\_line\_shows\_real\_error\_text** (G21): A failing `pytest` call shows its error line in the friction section. A failing call with no error text is not written as a bare `Exit code` line.
+> * **test\_test\_runner\_scratch\_excluded\_from\_blind\_alleys**: Scratch under `g3-accept/` and `rewrite-check/` does not appear; with only such scratch, the section reads `No ephemeral scratchpads recorded.`
+> * **test\_scratch\_outside\_test\_runs\_is\_kept**: `planning-backup/...` and `docs/g3-accept-notes.md` are kept.
+> * **test\_friction\_line\_shows\_real\_error\_text**: A failing `pytest` call shows its `FAILED` line, not the bare `Exit code` line.
+> * **test\_friction\_entry\_without\_error\_marker\_is\_dropped**: A call with no error-marker line is dropped; the section reads `- None detected.`.
 
 Criterion 5 of GOALS.md G15 (the format is written down) is checked by the grep acceptance for this spec, not by a test.
 
