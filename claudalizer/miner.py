@@ -114,11 +114,33 @@ def decode_slug(slug: str) -> Optional[str]:
     return fallback
 
 
-def is_file_settled(file_path: Path, min_age_seconds: float = SETTLE_DEBOUNCE_SECONDS) -> bool:
-    """Check if a file has stopped being modified for at least min_age_seconds."""
+def newest_mtime(path: Path) -> float:
+    """Return the newest mtime of path, or of any file beneath it if path is a directory."""
+    newest = path.stat().st_mtime
+    if path.is_dir():
+        for root, _dirs, files in os.walk(path):
+            for name in files:
+                try:
+                    newest = max(newest, (Path(root) / name).stat().st_mtime)
+                except OSError:
+                    continue  # file removed mid-walk
+    return newest
+
+
+def scratchpad_changed_since(scratchpad_dir: Path, reference: Path) -> bool:
+    """True if any file under scratchpad_dir is newer than the reference file."""
+    if not scratchpad_dir.is_dir():
+        return False
     try:
-        mtime = file_path.stat().st_mtime
-        return (time.time() - mtime) >= min_age_seconds
+        return newest_mtime(scratchpad_dir) > reference.stat().st_mtime
+    except OSError:
+        return False
+
+
+def is_file_settled(file_path: Path, min_age_seconds: float = SETTLE_DEBOUNCE_SECONDS) -> bool:
+    """Check if a file, or everything under a directory, has been quiet for at least min_age_seconds."""
+    try:
+        return (time.time() - newest_mtime(file_path)) >= min_age_seconds
     except OSError:
         return False
 
@@ -377,8 +399,10 @@ class SessionMiner:
         dossier_json = dossier_dir / "dossier.json"
 
         if dossier_json.exists() and not force:
-            logger.debug(f"Dossier {dossier_json} already exists. Skipping.")
-            return None
+            if not scratchpad_changed_since(scratchpad_dir, dossier_json):
+                logger.debug(f"Dossier {dossier_json} already up to date. Skipping.")
+                return None
+            logger.info(f"Scratchpad for {slug}/{session_id} changed since last mine. Re-mining.")
 
         # Cross-reference with persistent JSONL transcript
         transcript_path = self.claude_projects / slug / f"{session_id}.jsonl"

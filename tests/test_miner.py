@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 from pathlib import Path
 import pytest
 
@@ -12,6 +13,7 @@ from claudalizer.miner import (
     parse_transcript_events,
     snapshot_scratchpad,
     file_lock,
+    is_file_settled,
 )
 from claudalizer.distiller import MemoryDistiller, build_synthesis_prompt, synthesize_offline_memory_block
 from claudalizer.ipc import detect_compositor, emit_waybar_signal
@@ -165,6 +167,102 @@ def test_session_miner_pipeline(tmp_path):
     assert dossier_json.exists()
     data = json.loads(dossier_json.read_text(encoding="utf-8"))
     assert data["session_id"] == session_id
+
+
+def test_settle_sees_nested_rewrite(tmp_path):
+    sess_dir = tmp_path / "session"
+    nested = sess_dir / "scratchpad" / "notes.txt"
+    nested.parent.mkdir(parents=True)
+    nested.write_text("old", encoding="utf-8")
+
+    # Age everything well past the settle window
+    old = time.time() - 10
+    for p in (nested, nested.parent, sess_dir):
+        os.utime(p, (old, old))
+    assert is_file_settled(sess_dir, 2.0)
+
+    # Rewrite only the nested file: the session dir's own mtime stays old
+    nested.write_text("new", encoding="utf-8")
+    assert os.stat(sess_dir).st_mtime < time.time() - 5
+    assert not is_file_settled(sess_dir, 2.0)
+
+    # Once the nested file has been quiet for the window, the session settles
+    os.utime(nested, (old, old))
+    assert is_file_settled(sess_dir, 2.0)
+
+
+def test_rewritten_scratchpad_is_recaptured(tmp_path):
+    tmp_root = tmp_path / "tmp_claude"
+    claude_projects = tmp_path / "projects"
+    memories_root = tmp_path / "memories"
+    slug = "-home-andrew-AI-claudalizer"
+    session_id = "rewrite-session-uuid"
+
+    sess_dir = tmp_root / slug / session_id
+    probe = sess_dir / "scratchpad" / "probe.py"
+    probe.parent.mkdir(parents=True)
+    probe.write_text("v1", encoding="utf-8")
+    proj_dir = claude_projects / slug
+    proj_dir.mkdir(parents=True)
+    with open(proj_dir / f"{session_id}.jsonl", "w", encoding="utf-8") as f:
+        f.write(json.dumps({"type": "user", "message": {"content": "Rewrite the scratchpad after mining"}}) + "\n")
+
+    old = time.time() - 10
+    for p in (probe, probe.parent, sess_dir):
+        os.utime(p, (old, old))
+    miner = SessionMiner(tmp_root=tmp_root, claude_projects=claude_projects,
+                         memories_root=memories_root, lock_file=tmp_path / "miner.lock")
+
+    assert len(miner.scan_and_mine(debounce=True)) == 1
+    saved = memories_root / slug / session_id / "scratchpad" / "probe.py"
+    assert saved.read_text(encoding="utf-8") == "v1"
+
+    # Nothing changed: the already-mined session is still skipped
+    assert miner.scan_and_mine(debounce=True) == []
+
+    # Rewrite the source after the dossier was written; the next scan must re-capture it
+    # Age the dossier to 8 s ago, then rewrite the probe 5 s ago: settled, and newer than the dossier
+    dossier_json = memories_root / slug / session_id / "dossier.json"
+    os.utime(dossier_json, (time.time() - 8, time.time() - 8))
+    probe.write_text("v2", encoding="utf-8")
+    os.utime(probe, (time.time() - 5, time.time() - 5))
+    assert len(miner.scan_and_mine(debounce=True)) == 1
+    assert saved.read_text(encoding="utf-8") == "v2"
+
+
+def test_skipped_session_is_mined_on_next_scan(tmp_path):
+    tmp_root = tmp_path / "tmp_claude"
+    claude_projects = tmp_path / "projects"
+    slug = "-home-andrew-AI-claudalizer"
+    session_id = "retry-session-uuid"
+
+    sess_dir = tmp_root / slug / session_id
+    scratch = sess_dir / "scratchpad"
+    scratch.mkdir(parents=True)
+    probe = scratch / "probe.py"
+    probe.write_text("# probe", encoding="utf-8")
+
+    proj_dir = claude_projects / slug
+    proj_dir.mkdir(parents=True)
+    with open(proj_dir / f"{session_id}.jsonl", "w", encoding="utf-8") as f:
+        f.write(json.dumps({"type": "user", "message": {"content": "Retry the skipped session on next poll"}}) + "\n")
+
+    miner = SessionMiner(
+        tmp_root=tmp_root,
+        claude_projects=claude_projects,
+        memories_root=tmp_path / "memories",
+        lock_file=tmp_path / "miner.lock",
+    )
+
+    # First poll: the session was written just now, so it is not settled and is skipped
+    assert miner.scan_and_mine(debounce=True) == []
+
+    # Second poll, after the write has been quiet long enough: the session is mined
+    old = time.time() - 10
+    for p in (probe, scratch, sess_dir):
+        os.utime(p, (old, old))
+    dossiers = miner.scan_and_mine(debounce=True)
+    assert [d.session_id for d in dossiers] == [session_id]
 
 
 def test_distiller_offline(tmp_path):
