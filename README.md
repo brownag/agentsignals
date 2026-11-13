@@ -92,9 +92,12 @@ Add a custom module in `~/.config/waybar/config`:
     "return-type": "json",
     "exec": "cat /tmp/claudalizer_status.json 2>/dev/null || echo '{\"text\":\"🧠\"}'",
     "interval": 3,
+    "signal": 8,
     "tooltip": true
 }
 ```
+
+Claudalizer sends `pkill -RTMIN+8 waybar` after each status write, so the module refreshes immediately. Polling every `interval` seconds remains the fallback.
 
 ---
 
