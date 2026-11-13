@@ -12,6 +12,7 @@ from typing import Optional
 
 from claudalizer.distiller import MemoryDistiller
 from claudalizer.ipc import dispatch_wm_hook, emit_waybar_signal, notify_extraction, send_notification
+from claudalizer.waybar_config import find_waybar_config, manual_snippet, patch_waybar_config
 from claudalizer.miner import (
     DEFAULT_CLAUDE_PROJECTS,
     DEFAULT_LOCK_FILE,
@@ -175,6 +176,10 @@ def handle_install_systemd(args: argparse.Namespace) -> int:
         print(watch_content.strip())
         print(f"\n--- [{user_tmpfiles_dir / 'claudalizer.conf'}] ---")
         print(tmpfiles_content.strip())
+        waybar_path = find_waybar_config()
+        waybar_state = patch_waybar_config(waybar_path, dry_run=True)
+        print(f"\n--- Waybar config: {waybar_path or '(not found)'} ---")
+        print(f"status: {waybar_state}")
         print("\nDry-run complete. No files written.")
         return 0
 
@@ -200,6 +205,18 @@ def handle_install_systemd(args: argparse.Namespace) -> int:
     print("  systemctl --user daemon-reload")
     print("  systemctl --user enable --now claudalizer.path")
     print("  systemctl --user enable --now claudalizer-watch.service")
+
+    waybar_path = find_waybar_config()
+    waybar_state = patch_waybar_config(waybar_path)
+    print(f"\nWaybar config: {waybar_path or '(not found)'}")
+    if waybar_state == "added":
+        print("  Added custom/claudalizer to modules-right (backup saved next to the config).")
+        print("  Restart Waybar to load it.")
+    elif waybar_state == "present":
+        print("  custom/claudalizer already present; left unchanged.")
+    else:
+        print(f"  Not edited ({waybar_state}). Add it by hand:")
+        print("  " + manual_snippet().replace("\n", "\n  "))
 
     return 0
 
