@@ -8,7 +8,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 from claudalizer.distiller import MemoryDistiller
 from claudalizer.ipc import dispatch_wm_hook, emit_waybar_signal, notify_extraction, send_notification
@@ -43,6 +43,19 @@ def _write_mined_status(dossiers) -> None:
     slug = dossiers[-1].slug
     emit_waybar_signal(status="extracted", message=f"Mined {slug} at {now}", mined_count=len(dossiers))
     emit_waybar_signal(status="idle", message=f"Last mined {slug} at {now}", mined_count=0)
+
+
+def resolve_llm_settings(args: argparse.Namespace) -> Tuple[Optional[str], str]:
+    """Endpoint and model for distillation. The flag wins; otherwise the environment (read at call time).
+
+    --llm-model defaults to "llama3". That default counts as not given, so CLAUDALIZER_LLM_MODEL
+    (default "local") applies.
+    """
+    endpoint = getattr(args, "llm_endpoint", None) or os.environ.get("CLAUDALIZER_LLM_ENDPOINT") or None
+    model = getattr(args, "llm_model", None) or "llama3"
+    if model == "llama3":
+        model = os.environ.get("CLAUDALIZER_LLM_MODEL", "local")
+    return endpoint, model
 
 
 def format_skip_summary(skipped: dict) -> str:
@@ -88,8 +101,8 @@ def handle_scan(args: argparse.Namespace) -> int:
             distiller.distill_session(
                 d.slug,
                 d.session_id,
-                llm_endpoint=args.llm_endpoint,
-                llm_model=args.llm_model,
+                llm_endpoint=resolve_llm_settings(args)[0],
+                llm_model=resolve_llm_settings(args)[1],
                 force=args.force,
             )
 
@@ -102,8 +115,8 @@ def handle_distill(args: argparse.Namespace) -> int:
 
     distilled = distiller.distill_all(
         target_slug=args.project,
-        llm_endpoint=args.llm_endpoint,
-        llm_model=args.llm_model,
+        llm_endpoint=resolve_llm_settings(args)[0],
+        llm_model=resolve_llm_settings(args)[1],
         force=args.force,
     )
 
@@ -140,8 +153,8 @@ def handle_watch(args: argparse.Namespace) -> int:
                             distiller.distill_session(
                                 d.slug,
                                 d.session_id,
-                                llm_endpoint=args.llm_endpoint,
-                                llm_model=args.llm_model,
+                                llm_endpoint=resolve_llm_settings(args)[0],
+                                llm_model=resolve_llm_settings(args)[1],
                             )
                     _write_mined_status(dossiers)
             except Exception as e:

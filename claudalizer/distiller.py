@@ -100,9 +100,13 @@ def call_llm_completion(
     prompt: str,
     endpoint: str = "http://localhost:11434/v1/chat/completions",
     model: str = "llama3",
-    timeout: float = 30.0,
+    timeout: float = 300.0,
 ) -> Optional[str]:
-    """Call OpenAI-compatible LLM endpoint (Ollama, llama.cpp, etc.) using urllib."""
+    """Call OpenAI-compatible LLM endpoint (Ollama, llama.cpp, etc.) using urllib.
+
+    Thinking is switched off and output capped: a reasoning model otherwise spends the whole
+    budget on reasoning and returns no visible content (measured 2026-11-12).
+    """
     payload = {
         "model": model,
         "messages": [
@@ -110,6 +114,8 @@ def call_llm_completion(
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.2,
+        "max_tokens": 1024,
+        "chat_template_kwargs": {"enable_thinking": False},
     }
 
     req_data = json.dumps(payload).encode("utf-8")
@@ -125,11 +131,14 @@ def call_llm_completion(
             res_json = json.loads(response.read().decode("utf-8"))
             choices = res_json.get("choices", [])
             if choices:
-                return choices[0].get("message", {}).get("content", "").strip()
+                content = (choices[0].get("message", {}).get("content") or "").strip()
+                if content:
+                    return content
     except Exception as e:
         logger.warning(f"LLM call to {endpoint} failed: {e}")
         return None
 
+    logger.warning(f"LLM endpoint {endpoint} returned no content; using offline block.")
     return None
 
 

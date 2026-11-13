@@ -312,3 +312,81 @@ def test_friction_entry_without_error_marker_is_dropped():
     assert "- None detected." in friction
     assert "Exit code 2" not in friction
     assert "some code line" not in friction
+
+
+# --- LLM request settings and endpoint defaults (orchestration 9, T9.1.1) ----------------
+
+
+class _FakeResponse:
+    def __init__(self, body: bytes):
+        self._body = body
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def test_llm_request_turns_off_thinking_and_caps_output(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["body"] = json.loads(req.data.decode("utf-8"))
+        captured["timeout"] = timeout
+        return _FakeResponse(json.dumps({"choices": [{"message": {"content": "BLOCK TEXT"}}]}).encode())
+
+    monkeypatch.setattr(distiller_mod.urllib.request, "urlopen", fake_urlopen)
+    out = distiller_mod.call_llm_completion("prompt", endpoint="http://127.0.0.1:9/v1/chat/completions", model="local")
+
+    assert out == "BLOCK TEXT"
+    assert captured["body"]["max_tokens"] == 1024
+    assert captured["body"]["chat_template_kwargs"] == {"enable_thinking": False}
+    assert captured["timeout"] == 300.0
+
+
+def test_empty_llm_reply_returns_none_and_warns(monkeypatch, caplog):
+    def fake_urlopen(req, timeout=None):
+        return _FakeResponse(json.dumps({"choices": [{"message": {"content": ""}}]}).encode())
+
+    monkeypatch.setattr(distiller_mod.urllib.request, "urlopen", fake_urlopen)
+    with caplog.at_level("WARNING"):
+        out = distiller_mod.call_llm_completion("prompt", endpoint="http://127.0.0.1:9/v1/chat/completions")
+
+    assert out is None
+    assert "returned no content" in caplog.text
+    assert "http://127.0.0.1:9/v1/chat/completions" in caplog.text
+
+
+def test_resolve_llm_settings_uses_environment_when_flag_absent(monkeypatch):
+    import argparse
+    from claudalizer.cli import resolve_llm_settings
+
+    monkeypatch.setenv("CLAUDALIZER_LLM_ENDPOINT", "http://127.0.0.1:8090/v1/chat/completions")
+    monkeypatch.delenv("CLAUDALIZER_LLM_MODEL", raising=False)
+    args = argparse.Namespace(llm_endpoint=None, llm_model="llama3")
+
+    assert resolve_llm_settings(args) == ("http://127.0.0.1:8090/v1/chat/completions", "local")
+
+
+def test_resolve_llm_settings_flag_wins_over_environment(monkeypatch):
+    import argparse
+    from claudalizer.cli import resolve_llm_settings
+
+    monkeypatch.setenv("CLAUDALIZER_LLM_ENDPOINT", "http://127.0.0.1:8090/v1/chat/completions")
+    args = argparse.Namespace(llm_endpoint="http://127.0.0.1:9999/v1/chat/completions", llm_model="mymodel")
+
+    assert resolve_llm_settings(args) == ("http://127.0.0.1:9999/v1/chat/completions", "mymodel")
+
+
+def test_resolve_llm_settings_no_endpoint_is_none(monkeypatch):
+    import argparse
+    from claudalizer.cli import resolve_llm_settings
+
+    monkeypatch.delenv("CLAUDALIZER_LLM_ENDPOINT", raising=False)
+    args = argparse.Namespace(llm_endpoint=None, llm_model="llama3")
+
+    assert resolve_llm_settings(args)[0] is None
