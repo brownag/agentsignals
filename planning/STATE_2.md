@@ -22,7 +22,7 @@ Last Updated: 2026-11-12
 | --- | --- | --- | --- | --- |
 | 1 | T2.1.1 Sway detection requires a socket; SPEC §4.3 IPC tests | done | f547fe8 | 5 passed in tests/test_ipc.py |
 | 1 | T2.1.2 Path unit DirectoryNotEmpty | done | 21c8fad | make systemd-dry-run exit 0; line present |
-| 2 | T2.2.1 Failed git results kept; exit code 0 not a failure; README | done | 2c0a311, 0c7354f | `make test` 18 passed after wave 2 |
+| 2 | T2.2.1 Failed git results kept; exit code 0 not a failure; README | done | 2c0a311, 0c7354f | `make test` 22 passed after wave 2 (16 base + 5 test_ipc + 1 new) |
 | 3 | T2.3.1 SPEC §4.1 slug and corrupt-transcript tests | done | 7b891bc | no change to miner.py needed; corrupt-recovery passed as written |
 
 Wave 2 starts only after wave 1 is all `done`. Wave 3 starts only after wave 2 is all `done`.
