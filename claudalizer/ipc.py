@@ -7,6 +7,8 @@ import subprocess
 from pathlib import Path
 from typing import Optional, Dict, Any
 
+WAYBAR_SIGNAL = 8
+
 
 def send_notification(
     title: str,
@@ -84,7 +86,24 @@ def emit_waybar_signal(
             json.dump(payload, f)
         temp_file.replace(status_file)
     except OSError:
-        pass
+        return
+    _signal_waybar()
+
+
+def _signal_waybar() -> None:
+    """Ask Waybar to re-read custom modules that set "signal": WAYBAR_SIGNAL."""
+    if not shutil.which("pkill"):
+        return
+    try:
+        subprocess.run(
+            ["pkill", f"-RTMIN+{WAYBAR_SIGNAL}", "waybar"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+            check=False,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return
 
 
 def dispatch_wm_hook(

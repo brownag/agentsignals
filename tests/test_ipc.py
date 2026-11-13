@@ -1,3 +1,5 @@
+import subprocess
+
 import pytest
 
 import claudalizer.ipc as ipc
@@ -70,3 +72,45 @@ def test_sway_glob_fallback_with_socket(clean_env, monkeypatch, tmp_path):
     (tmp_path / "sway-ipc.0.sock").touch()
 
     assert ipc.detect_compositor() == "sway"
+
+
+_real_signal_waybar = ipc._signal_waybar
+
+
+def test_waybar_refresh_signal_sent(monkeypatch, tmp_path):
+    monkeypatch.setattr(ipc, "_signal_waybar", _real_signal_waybar)
+    monkeypatch.setattr(ipc.shutil, "which", _fake_which({"pkill": "/usr/bin/pkill"}))
+    calls = []
+    monkeypatch.setattr(ipc.subprocess, "run", lambda cmd, **kwargs: calls.append(cmd))
+
+    ipc.emit_waybar_signal(status_file=tmp_path / "s.json", status="idle")
+
+    assert calls == [["pkill", "-RTMIN+8", "waybar"]]
+
+
+def test_waybar_refresh_skipped_without_pkill(monkeypatch, tmp_path):
+    monkeypatch.setattr(ipc, "_signal_waybar", _real_signal_waybar)
+    monkeypatch.setattr(ipc.shutil, "which", _fake_which({}))
+    calls = []
+    monkeypatch.setattr(ipc.subprocess, "run", lambda cmd, **kwargs: calls.append(cmd))
+    status_file = tmp_path / "s.json"
+
+    ipc.emit_waybar_signal(status_file=status_file, status="idle")
+
+    assert calls == []
+    assert status_file.exists()
+
+
+def test_waybar_refresh_failure_is_silent(monkeypatch, tmp_path):
+    monkeypatch.setattr(ipc, "_signal_waybar", _real_signal_waybar)
+    monkeypatch.setattr(ipc.shutil, "which", _fake_which({"pkill": "/usr/bin/pkill"}))
+
+    def boom(cmd, **kwargs):
+        raise subprocess.TimeoutExpired(cmd, 2)
+
+    monkeypatch.setattr(ipc.subprocess, "run", boom)
+    status_file = tmp_path / "s.json"
+
+    ipc.emit_waybar_signal(status_file=status_file, status="idle")
+
+    assert status_file.exists()
