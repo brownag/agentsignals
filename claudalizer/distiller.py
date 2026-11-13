@@ -180,7 +180,7 @@ def synthesize_offline_memory_block(dossier_data: Dict[str, Any]) -> str:
             directives.append("Check Cargo build flags and crate dependencies before running tests.")
 
     if not directives:
-        directives.append("Maintain strict idempotency and check environment variables before execution.")
+        directives.append("None detected.")
 
     # Deduplicate directives
     for d in sorted(set(directives)):

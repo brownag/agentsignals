@@ -240,12 +240,28 @@ def test_rebuild_discards_hand_edits_outside_session_files(tmp_path):
     assert "## Session abcdef12 Distillation" in project
 
 
-@pytest.mark.xfail(strict=True, reason="G19: generic fallback directive removed")
 def test_no_matching_error_shows_none_detected_not_fallback_directive():
     block = synthesize_offline_memory_block(_dossier(tool_errors=[]))
     directives = _section(block, "### 3. Directives for CLAUDE.md")
     assert "Maintain strict idempotency" not in directives
     assert "None detected" in directives
+
+
+def test_directives_none_detected_when_errors_match_no_pattern():
+    dossier = _dossier(
+        tool_errors=[
+            {
+                "tool_name": "Bash",
+                "command_or_input": "ls",
+                "error_output": "Exit code 1",
+                "exit_code": 1,
+            }
+        ]
+    )
+    block = synthesize_offline_memory_block(dossier)
+    directives = _section(block, "### 3. Directives for CLAUDE.md")
+    assert "- None detected." in directives
+    assert "Maintain strict idempotency" not in directives
 
 
 @pytest.mark.xfail(strict=True, reason="G20: claudalizer test-run scratch excluded from blind-alleys")
