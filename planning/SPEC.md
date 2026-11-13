@@ -131,12 +131,13 @@ Each distilled session writes two things:
 
 #### **Synthesis**
 
-* If an LLM endpoint is given, `call_llm_completion` sends the prompt from `build_synthesis_prompt` to an OpenAI-compatible `/v1/chat/completions` endpoint, using stdlib `urllib`. Non-empty text in the reply becomes the memory block.
-* If there is no endpoint, or the call returns nothing, `synthesize_offline_memory_block` builds the block from the dossier. No network access.
+* The endpoint comes from the `--llm-endpoint` flag, or else from the environment variable `CLAUDALIZER_LLM_ENDPOINT`. The model comes from `--llm-model` unless that is the default `llama3`, in which case it comes from `CLAUDALIZER_LLM_MODEL` (default `local`). The flag wins. The environment is read at call time.
+* With an endpoint, `call_llm_completion` sends the prompt from `build_synthesis_prompt` to an OpenAI-compatible `/v1/chat/completions` endpoint, using stdlib `urllib`. The request sets `max_tokens` to 1024 and `chat_template_kwargs.enable_thinking` to false, because a reasoning model otherwise spends the whole budget on reasoning and returns no visible content. The timeout is 300 s. Non-empty text in the reply becomes the memory block.
+* If there is no endpoint, or the call fails or returns no content, `synthesize_offline_memory_block` builds the block from the dossier, with no network access. An empty reply is logged with a warning that names the endpoint, so the fallback is not silent.
 
 #### **Offline block format**
 
-The block starts with `# Mined Behavioral Memory for <slug>` and a `**Source Directory:**` line, then three sections in this order:
+The block starts with `# Mined Behavioral Memory for <slug>`, then a `**Source Directory:**` line, then `**Objective:** <text>`. The objective is the session's first real request (at least 15 characters, whitespace collapsed, truncated to 300 characters with `…`); with no such request it reads `not captured.`. The objective is a header line, not a section. Then three sections in this order:
 
 1. `### 1. Tool / Skill Friction`: one line per failing tool call, in the form `- **{tool}** (`{command}`): {first output line containing an error marker}`. Markers: `FAILED`, `Error`, `error:`, `error[`, `Traceback`, `panicked`, `Exception`, `command not found`, `No such file`. A call with no such line is dropped. If none remain, `- None detected.`. Repeated commands are shown once.
 2. `### 2. Blind Alleys & Discarded Spikes`: one line per scratchpad file, except scratch whose first path segment is `g3-accept` or `rewrite-check` (the claudalizer's own test runs), which is excluded. If none remain, `- No ephemeral scratchpads recorded.`
@@ -228,6 +229,10 @@ Target behaviour (marked `xfail(strict=True)` with the goal id in the reason; ea
 > * **test\_scratch\_outside\_test\_runs\_is\_kept**: `planning-backup/...` and `docs/g3-accept-notes.md` are kept.
 > * **test\_friction\_line\_shows\_real\_error\_text**: A failing `pytest` call shows its `FAILED` line, not the bare `Exit code` line.
 > * **test\_friction\_entry\_without\_error\_marker\_is\_dropped**: A call with no error-marker line is dropped; the section reads `- None detected.`.
+> * **test\_llm\_request\_turns\_off\_thinking\_and\_caps\_output**: The request body has `max_tokens` 1024 and `chat_template_kwargs.enable_thinking` false; the timeout is 300 s.
+> * **test\_empty\_llm\_reply\_returns\_none\_and\_warns**: An empty reply returns `None` and logs a warning naming the endpoint.
+> * **test\_resolve\_llm\_settings\_uses\_environment\_when\_flag\_absent**, **test\_resolve\_llm\_settings\_flag\_wins\_over\_environment**, **test\_resolve\_llm\_settings\_no\_endpoint\_is\_none**: endpoint and model resolution from the flag and environment.
+> * **test\_objective\_is\_first\_real\_request**, **test\_objective\_truncated\_to\_300\_chars\_with\_ellipsis**, **test\_objective\_not\_captured\_when\_no\_prompts**: the `**Objective:**` header line; the block still has three `###` sections.
 
 Criterion 5 of GOALS.md G15 (the format is written down) is checked by the grep acceptance for this spec, not by a test.
 
