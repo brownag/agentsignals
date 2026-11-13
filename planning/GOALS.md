@@ -50,6 +50,8 @@ _(none. Every goal in the project-memory focus is done: G15, G18, G19, G20, G21.
 
 ## Done
 
+- **[G_scan]** `claudalizer scan` mines sessions whose transcript changed, and says what it skipped.
+  - Status: Done (`b515b9e`). Before: a transcript-only change was never re-mined (23 sessions in the real data), and skipped sessions were silent, so scan printed `Mined 0`. Now the skip check also compares the transcript mtime, and scan prints `Skipped: N active, N already up to date, N with no content`, naming the active sessions. Tests in `tests/test_scan_report.py`. `make test` 65 passed.
 - **[G20]** The blind-alleys list excludes the claudalizer's own test scratch.
   - Status: Done (orchestration 8, `planning/STATE_8.md`). `5d0cef0` drops scratch under `g3-accept` and `rewrite-check`. `make test` 60 passed.
 - **[G21]** Tool-friction lines show the failing command and its real error line.
