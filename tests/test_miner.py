@@ -45,6 +45,45 @@ def test_is_git_discernable():
     assert not is_git_discernable("Bash", "python test.py", "No such file or directory")
 
 
+def test_git_state_filtering(tmp_path):
+    transcript_file = tmp_path / "session-git.jsonl"
+
+    def tool_use(tool_id, command):
+        return {
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "tool_use", "id": tool_id, "name": "Bash", "input": {"command": command}}]
+            },
+        }
+
+    def tool_result(tool_id, text):
+        return {
+            "type": "user",
+            "message": {
+                "content": [{"type": "tool_result", "tool_use_id": tool_id, "is_error": False, "content": text}]
+            },
+        }
+
+    lines = [
+        {"type": "user", "message": {"content": "Check the repo state before the release."}},
+        tool_use("git-fail", "git diff HEAD~1"),
+        tool_result("git-fail", "Exit code 1\nfatal: bad revision"),
+        tool_use("exit-zero", "pytest tests/"),
+        tool_result("exit-zero", "Exit code 0\n12 passed"),
+        tool_use("git-ok", "git status"),
+        tool_result("git-ok", ""),
+    ]
+    with open(transcript_file, "w", encoding="utf-8") as f:
+        for line in lines:
+            f.write(json.dumps(line) + "\n")
+
+    _, tool_errors = parse_transcript_events(transcript_file)
+    kept = {event.tool_use_id for event in tool_errors}
+    assert "git-fail" in kept
+    assert "exit-zero" not in kept
+    assert "git-ok" not in kept
+
+
 def test_transcript_parsing(tmp_path):
     transcript_file = tmp_path / "session-123.jsonl"
     lines = [

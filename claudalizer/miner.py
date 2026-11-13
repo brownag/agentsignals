@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import time
 from contextlib import contextmanager
@@ -146,11 +147,20 @@ def is_file_settled(file_path: Path, min_age_seconds: float = SETTLE_DEBOUNCE_SE
         return False
 
 
+EXIT_CODE_PATTERN = re.compile(r"Exit code (\d+)")
+
+
+def has_nonzero_exit_code(text: str) -> bool:
+    """True if the output reports a non-zero `Exit code N`. Exit code 0 is a success."""
+    return any(int(code) != 0 for code in EXIT_CODE_PATTERN.findall(text))
+
+
 def is_git_discernable(tool_name: Optional[str], command_or_input: Optional[str], error_output: str) -> bool:
     """Filter out Git-discernable noise.
 
-    Returns True if the event is a standard successful Git diff, commit, or clean test pass
-    that is already tracked in Git history.
+    Returns True only for a successful Git inspection (diff, status, log) or a successful
+    Edit/Write, which Git history already tracks. Any output on these tools means a failure,
+    so the event is kept.
     """
     if not tool_name:
         tool_name = ""
@@ -161,9 +171,8 @@ def is_git_discernable(tool_name: Optional[str], command_or_input: Optional[str]
     if tool_name in ("Edit", "Write") and not out:
         return True
 
-    # If git commit/status/diff succeeded without error
-    if cmd.startswith("git diff") or cmd.startswith("git status") or cmd.startswith("git log"):
-        # Informational inspection
+    # Successful git inspection only: a failed git command has output and is kept
+    if not out and (cmd.startswith("git diff") or cmd.startswith("git status") or cmd.startswith("git log")):
         return True
 
     return False
@@ -241,7 +250,7 @@ def parse_transcript_events(
                                     )
 
                                 # Check exit code or error markers in text
-                                has_exit_err = "Exit code" in text_out or "command not found" in text_out or "Error:" in text_out
+                                has_exit_err = has_nonzero_exit_code(text_out) or "command not found" in text_out or "Error:" in text_out
                                 if is_err or has_exit_err:
                                     t_id = block.get("tool_use_id")
                                     t_info = tool_uses.get(t_id, {}) if t_id else {}
