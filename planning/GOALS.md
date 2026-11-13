@@ -1,27 +1,20 @@
 # Project Goals (`planning/GOALS.md`)
 
 Last Updated: 2026-11-12
-Source State: STATE_3.md (orchestration 3 executed: G4 implemented, live check pending); magic-wand re-rank (G14 circled)
+Source State: STATE_4.md (orchestration 4: G14 done, probe result survives; G4 circled)
 
 Intent: durable indexing of Claude session history from volatile `/tmp/claude-1000` before deletion, on Sway/Wayland, with systemd and Waybar included.
 
 ## Circled Goal (Active)
 
-- **[G14]** The Waybar refresh signal is confirmed not to terminate Waybar on this machine, before the G4 code is installed.
-  - Why now: G4's code sends `pkill -RTMIN+8 waybar` after every status write. The plan assumed this is a no-op when no module sets `"signal": 8`. If Waybar has no handler for that signal, it terminates, and every scan would kill the bar. Answering this unblocks G4's install and live check, and decides whether G4 keeps this mechanism.
-  - Exit criteria: a probe on a renamed copy of the Waybar binary, with no `signal` config, shows the process survives `kill -RTMIN+8 <pid>`. If it doesn't, G4 switches to another mechanism, and that change is recorded in `EXECUTION_PLAN_3.md`.
-  - First action: copy `/usr/bin/waybar` to a scratch name (e.g. `waybar-probe`, not `waybar`), start it with a throwaway config, and send `kill -RTMIN+8` to its PID. Do not use `pkill`, which also matches the real Waybar.
-  - Depends on: none
-  - Risk: R1 in `planning/EXECUTION_PLAN_3.md`. Do not run `make install-user` until this is answered.
-
-## Sequenced Goals (Dependency DAG)
-
 - **[G4]** Waybar shows current capture state and refreshes after each scan.
   - Why now: the user-visible goal. Code is in place (commits `a2eefa3`, `5ab4552`, `b651913`); mocked tests and `make check` pass.
   - Exit criteria: after a scan writes a dossier, the Waybar module re-reads the status within a few seconds, verified by a test that checks the refresh call is made. `make check` passes. Live refresh check is user-run.
-  - First action: after G14 passes, run the live check (add the module per README, run `claudalizer scan`, confirm the update).
-  - Depends on: G14 (install gate), G3 live timing check (user-run; needed only to verify timing).
-  - Status: implemented; live refresh check pending (user-run).
+  - First action: run the live check (add the module per README, run `claudalizer scan`, confirm the update).
+  - Depends on: none. G14 is closed (install gate passed). The G3 timing check is user-run and needed only to verify timing.
+  - Status: implemented; live refresh check pending (user-run). Status-write refresh uses `pkill -RTMIN+8 waybar`, which G14 showed does not kill Waybar 0.9.24.
+
+## Sequenced Goals (Dependency DAG)
 
 - **[G16]** `--notify` and `--auto-distill` can be turned off from the CLI.
   - Why here: a real defect (`store_true` with `default=True` cannot be disabled). Small, and it touches `cli.py`, so it goes before G11.
@@ -52,6 +45,8 @@ _(none)_
 
 ## Done
 
+- **[G14]** The Waybar refresh signal is confirmed not to terminate Waybar on this machine, before the G4 code is installed.
+  - Status: Done (orchestration 4, `planning/STATE_4.md` `## T4.1.1`). Headless probe on a renamed Waybar 0.9.24 copy under Sway 1.9: `RESULT: survives-RTMIN8=yes`; positive control (`"signal": 8` module) `refresh-with-signal8=yes`; `path=survives`. No code change. G4 keeps `pkill -RTMIN+8 waybar`.
 - **[G1]** Every session scratchpad file is in `~/.claude-mined-memories` before `/tmp/claude-1000` is deleted, with no silent drops.
   - Status: Done (`72d3ff6`, `efa23c8`, `ff66a16`; `make check` exit 0). Oversized and binary files are stubs; skipped-only sessions get a dossier; SPEC §4.1 `test_filter_oversized_scratchpad` passes.
   - Size policy: 250 KiB (`MAX_SCRATCHPAD_FILE_BYTES`), a default that can change without a redesign.

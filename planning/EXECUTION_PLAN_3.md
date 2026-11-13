@@ -48,7 +48,8 @@ Base branch: `g5-g6-g7-g9` (HEAD `6756b5c` at plan time). Work stays on this bra
 | D9 | 2026-11-12 | Acceptance is mocked (subprocess monkeypatched) plus `make check`. Live Waybar refresh is a user-run check | No Waybar in the test environment; matches G3's user-run check | Default |
 | D10 | 2026-11-12 | Amendment: `tests/conftest.py` (autouse stub of `ipc._signal_waybar`) is added to T3.1.1 | Without it, `tests/test_miner.py:515` and the dispatch tests would send real `pkill -RTMIN+8 waybar` on every test run (H6). Spec did not list it; re-scoped rather than widened ad hoc | Judgment (flagged for review) |
 | D11 | 2026-11-12 | Amendment: T3.2.1 writes `extracted` then `idle` in scan and watch | Only `notify_extraction` wrote `extracted`, and only under `--notify`; nothing wrote `idle` after, so the status stuck (D1). Final state is always `idle` | Judgment (flagged for review) |
-| R1 | 2026-11-12 | Risk, unverified: `pkill -RTMIN+8 waybar` may terminate Waybar if it has no handler for signal 8 | Waybar binary references `__libc_current_sigrtmin`; not confirmed. Do not run `make install-user` until checked | Open |
+| R1 | 2026-11-12 | Risk, unverified: `pkill -RTMIN+8 waybar` may terminate Waybar if it has no handler for signal 8 | Waybar binary references `__libc_current_sigrtmin`; not confirmed. Do not run `make install-user` until checked | Closed (orchestration 4 probe: RTMIN+8 survives on 0.9.24) |
+| D12 | 2026-11-12 | Orchestration 4 probe (headless Sway 1.9, Waybar 0.9.24 copy): `kill -RTMIN+8` does not terminate Waybar with no `signal` config; a `"signal": 8` module refreshes on it. G4 keeps `pkill -RTMIN+8 waybar`; no code change | Closes R1 and G14. Evidence in `planning/STATE_4.md` `## T4.1.1` | Probe |
 
 ## Recon Log (facts)
 
