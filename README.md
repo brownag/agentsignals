@@ -9,8 +9,8 @@ Lightweight, zero-maintenance background daemon and CLI toolkit designed to moni
 1. **Ephemeral vs. Persistent Separation:**
    - Scans `/tmp/claude-1000/` for active and abandoned session workspaces.
    - Cross-references with persistent JSONL transcripts in `~/.claude/projects/<slug>/<session-id>.jsonl`.
-   - **Filters out Git-discernable noise:** Ignores code modifications, checked-in commits, file diffs, and standard clean test passes already captured by Git history.
-   - **Preserves behavioral signals:** Captures tool failures, command exit codes, recurring error loops, aborted scratchpad scripts, transient API debug logs, and prompt objectives defining user intent.
+   - **Filters out Git-discernable noise:** Ignores successful `git diff`, `git status`, and `git log` calls, and successful Edit/Write results, because Git history already tracks them. Clean test passes are not filtered.
+   - **Preserves behavioral signals:** Captures failed tool results (including failed git commands), non-zero command exit codes (exit code 0 is not kept as a failure), recurring error loops, aborted scratchpad scripts, transient API debug logs, and prompt objectives defining user intent.
 
 2. **Dossiers & Distillation:**
    - Generates structured session dossiers in `~/.claude-mined-memories/<project-slug>/<session-id>/dossier.json`.
