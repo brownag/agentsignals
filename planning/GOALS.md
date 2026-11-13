@@ -12,6 +12,7 @@ Intent: durable indexing of Claude session history from volatile `/tmp/claude-10
   - Exit criteria: after a scan writes a dossier, the Waybar module re-reads the status within a few seconds, verified by a test that checks the refresh call is made. `make check` passes.
   - First action: find the Waybar refresh mechanism (`signal` in the module config, or `pkill -SIGRTMIN+N waybar`) and decide whether to call it from `emit_waybar_signal` or from the scan path in `cli.py`.
   - Depends on: G3 live timing check (user-run; needed only to verify timing, not to start G4), G5 (done).
+  - Status: implemented (orchestration 3, commits `a2eefa3`, `5ab4552`, `b651913`); live refresh check pending (user-run). Open risk R1 in `EXECUTION_PLAN_3.md`.
 
 ## Sequenced Goals (Dependency DAG)
 

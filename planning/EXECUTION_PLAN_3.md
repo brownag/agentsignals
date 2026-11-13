@@ -2,7 +2,7 @@
 
 Orchestration: 3
 Source goal: `planning/GOALS.md` [G4] (circled)
-Status: Approved by user (2026-11-12). Not started.
+Status: Approved by user (2026-11-12). Executed: waves 1-2 done (commits `a2eefa3`, `5ab4552`, `b651913`). Live Waybar check pending.
 Starts after: orchestration 2 closed (G5, G6, G7, G9 done on `g5-g6-g7-g9`).
 Base branch: `g5-g6-g7-g9` (HEAD `6756b5c` at plan time). Work stays on this branch unless the user says otherwise.
 
@@ -46,6 +46,9 @@ Base branch: `g5-g6-g7-g9` (HEAD `6756b5c` at plan time). Work stays on this bra
 | D7 | 2026-11-12 | Planning files are tracked, with separate `docs(planning)` commits | Same as orchestrations 1 and 2 | User (grill Q6) |
 | D8 | 2026-11-12 | Waves are serial where files overlap (`cli.py` is touched only in wave 2). Workers run inline by the orchestrator, one task at a time | Two small tasks; no file collisions | Default |
 | D9 | 2026-11-12 | Acceptance is mocked (subprocess monkeypatched) plus `make check`. Live Waybar refresh is a user-run check | No Waybar in the test environment; matches G3's user-run check | Default |
+| D10 | 2026-11-12 | Amendment: `tests/conftest.py` (autouse stub of `ipc._signal_waybar`) is added to T3.1.1 | Without it, `tests/test_miner.py:515` and the dispatch tests would send real `pkill -RTMIN+8 waybar` on every test run (H6). Spec did not list it; re-scoped rather than widened ad hoc | Judgment (flagged for review) |
+| D11 | 2026-11-12 | Amendment: T3.2.1 writes `extracted` then `idle` in scan and watch | Only `notify_extraction` wrote `extracted`, and only under `--notify`; nothing wrote `idle` after, so the status stuck (D1). Final state is always `idle` | Judgment (flagged for review) |
+| R1 | 2026-11-12 | Risk, unverified: `pkill -RTMIN+8 waybar` may terminate Waybar if it has no handler for signal 8 | Waybar binary references `__libc_current_sigrtmin`; not confirmed. Do not run `make install-user` until checked | Open |
 
 ## Recon Log (facts)
 
