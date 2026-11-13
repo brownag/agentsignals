@@ -140,7 +140,7 @@ The block starts with `# Mined Behavioral Memory for <slug>` and a `**Source Dir
 
 1. `### 1. Tool / Skill Friction`: one line per failing tool call, or `- None detected.` when there are none. Target rule for the line content: see G21 below.
 2. `### 2. Blind Alleys & Discarded Spikes`: one line per scratchpad file, or `- No ephemeral scratchpads recorded.`
-3. `### 3. Directives for CLAUDE.md`: directives inferred from the tool errors. Today three error patterns are matched (a missing Python environment, a missing binary, a Cargo error). When none match, today's code writes the fallback line `Maintain strict idempotency and check environment variables before execution.` **(target, G19)**: write `- None detected.` instead.
+3. `### 3. Directives for CLAUDE.md`: directives inferred from the tool errors. Three error patterns are matched (a missing Python environment, a missing binary, a Cargo error). When no error matches, or there are no errors, the section is `- None detected.`. The directives come only from the session; no boilerplate is written.
 
 #### **PROJECT\_MEMORY.md format**
 
@@ -222,7 +222,8 @@ Target behaviour (marked `xfail(strict=True)` with the goal id in the reason; ea
 > * **test\_rebuild\_skips\_session\_without\_memory\_md**: A session with a dossier but no `memory.md` is left out.
 > * **test\_rebuild\_is\_idempotent**: Rebuilding with no input change gives identical bytes.
 > * **test\_rebuild\_discards\_hand\_edits\_outside\_session\_files**: Text written by hand into PROJECT\_MEMORY.md is gone after a distill.
-> * **test\_no\_matching\_error\_shows\_none\_detected\_not\_fallback\_directive** (G19): With no matching error, the directives section says `None detected` and does not contain `Maintain strict idempotency`.
+> * **test\_no\_matching\_error\_shows\_none\_detected\_not\_fallback\_directive**: With no tool errors, the directives section says `None detected` and does not contain `Maintain strict idempotency`.
+> * **test\_directives\_none\_detected\_when\_errors\_match\_no\_pattern**: With a tool error that matches no pattern, the directives section is `- None detected.`.
 > * **test\_test\_runner\_scratch\_excluded\_from\_blind\_alleys** (G20): Scratchpad paths under `g3-accept/` and `rewrite-check/` do not appear in blind-alleys.
 > * **test\_friction\_line\_shows\_real\_error\_text** (G21): A failing `pytest` call shows its error line in the friction section. A failing call with no error text is not written as a bare `Exit code` line.
 
