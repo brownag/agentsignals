@@ -127,7 +127,7 @@ Skipped files are not copied; each is listed in `skipped_files` with its reason 
 Each distilled session writes two things:
 
 * `<memories_root>/<slug>/<session_id>/memory.md`: the session's memory block. A second call without `force` returns this file unchanged.
-* `<memories_root>/<slug>/PROJECT_MEMORY.md`: the per-project file, one section per session. Today it is appended to on every write. The target rule is in the PROJECT\_MEMORY.md format below **(target, G18)**.
+* `<memories_root>/<slug>/PROJECT\_MEMORY.md`: the per-project file. After each `memory.md` write it is rebuilt from every session's `memory.md` under the slug, in `scan_timestamp` order, and written atomically. Hand edits are overwritten.
 
 #### **Synthesis**
 
@@ -145,7 +145,7 @@ The block starts with `# Mined Behavioral Memory for <slug>` and a `**Source Dir
 #### **PROJECT\_MEMORY.md format**
 
 * Each session adds one section: a blank line, `---`, then the heading `## Session <first 8 characters of session id> Distillation`, then the session's block.
-* One section per session. Distilling the same session again with `force` must leave exactly one section for it **(target, G18)**. The target is to rebuild the file from the per-session `memory.md` files on each run, instead of appending.
+* One section per session. Sections are ordered by the dossier's `scan_timestamp`, then session id. A session directory without both `dossier.json` and `memory.md` is left out. Distilling the same session again with `force` rebuilds the file, so it still has exactly one section for that session.
 * Target rule for blind-alleys **(target, G20)**: scratchpad paths that come from the claudalizer's own test runs (`g3-accept`, `rewrite-check`) are dropped. If nothing else remains, the line is `- No ephemeral scratchpads recorded.`
 * Target rule for friction lines **(target, G21)**: each line names the failing command and its first error line. A failing call with no error text is dropped, not written as a bare `Exit code N` line.
 
@@ -216,7 +216,12 @@ Characterisation tests (must pass on current code):
 
 Target behaviour (marked `xfail(strict=True)` with the goal id in the reason; each test flips to pass when its goal lands):
 
-> * **test\_force\_redistill\_does\_not\_duplicate\_project\_section** (G18): Distilling one session twice with `force` leaves exactly one `## Session <id[:8]> Distillation` heading.
+> * **test\_force\_redistill\_does\_not\_duplicate\_project\_section**: Distilling one session twice with `force` leaves exactly one `## Session <id[:8]> Distillation` heading.
+> * **test\_rebuild\_changes\_only\_the\_redistilled\_session\_text**: Redistilling one session changes only its section; the other section is unchanged.
+> * **test\_rebuild\_orders\_sessions\_by\_scan\_timestamp**: Sections follow `scan_timestamp` order, not distill order.
+> * **test\_rebuild\_skips\_session\_without\_memory\_md**: A session with a dossier but no `memory.md` is left out.
+> * **test\_rebuild\_is\_idempotent**: Rebuilding with no input change gives identical bytes.
+> * **test\_rebuild\_discards\_hand\_edits\_outside\_session\_files**: Text written by hand into PROJECT\_MEMORY.md is gone after a distill.
 > * **test\_no\_matching\_error\_shows\_none\_detected\_not\_fallback\_directive** (G19): With no matching error, the directives section says `None detected` and does not contain `Maintain strict idempotency`.
 > * **test\_test\_runner\_scratch\_excluded\_from\_blind\_alleys** (G20): Scratchpad paths under `g3-accept/` and `rewrite-check/` do not appear in blind-alleys.
 > * **test\_friction\_line\_shows\_real\_error\_text** (G21): A failing `pytest` call shows its error line in the friction section. A failing call with no error text is not written as a bare `Exit code` line.
