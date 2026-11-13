@@ -1,7 +1,7 @@
 # Project Goals (`planning/GOALS.md`)
 
 Last Updated: 2026-11-12
-Source State: STATE_7.md (orchestration 7: G19 done; circled slot open). Focus: PROJECT_MEMORY.md quality.
+Source State: STATE_8.md (orchestration 8: G20 and G21 done; focus complete). Focus: PROJECT_MEMORY.md quality.
 
 Intent: durable indexing of Claude session history from volatile `/tmp/claude-1000` before deletion, on Sway/Wayland, with systemd and Waybar included. Current focus: the mined per-project memory (`~/.claude-mined-memories/<slug>/PROJECT_MEMORY.md`) is correct, derived, and worth reading.
 
@@ -16,21 +16,9 @@ Evidence (2026-11-12, `~/.claude-mined-memories`): 8 project files, 22 sections;
 
 ## Circled Goal (Active)
 
-_(none; G19 is done. G20 and G21 are ready. Choose the next circled goal.)_
+_(none. Every goal in the project-memory focus is done: G15, G18, G19, G20, G21. Choose the next focus with magic-wand.)_
 
 ## Sequenced Goals (Dependency DAG)
-
-- **[G20]** Blind-alleys excludes the claudalizer's own test scratch and lists only real work.
-  - Why here: the current list is mostly test-run files from the claudalizer's own suite and `g3-accept` runs.
-  - Exit criteria: a session whose scratchpad holds only test-run files (under a `g3-accept` / `rewrite-check` / `tmp_path`-style path) yields "No ephemeral scratchpads recorded." A test covers it.
-  - Depends on: none (G15 done). Same file as G18–G19; serialise after G19.
-  - Files in scope: `claudalizer/distiller.py` (scratchpad listing), `claudalizer/miner.py` only if the filter belongs there, `tests/test_distiller.py`.
-
-- **[G21]** Tool-friction lines show the failing command and its real error text, not a bare exit code and first line.
-  - Why here: most entries are "Exit code 2" with a first line that says nothing about the failure.
-  - Exit criteria: a test with a failing `pytest` call shows the error line from its output. Entries with no error text are dropped, not printed as "Exit code N".
-  - Depends on: none (G19 done). Same section of the generator as G20 if run after it.
-  - Files in scope: `claudalizer/distiller.py` (friction section), `tests/test_distiller.py`.
 
 - **[G16]** `--notify` and `--auto-distill` can be turned off from the CLI.
   - Why here: a real defect (`store_true` with `default=True` cannot be disabled). Small, and it touches `cli.py`, so it goes before G11.
@@ -62,6 +50,10 @@ _(none; G19 is done. G20 and G21 are ready. Choose the next circled goal.)_
 
 ## Done
 
+- **[G20]** The blind-alleys list excludes the claudalizer's own test scratch.
+  - Status: Done (orchestration 8, `planning/STATE_8.md`). `5d0cef0` drops scratch under `g3-accept` and `rewrite-check`. `make test` 60 passed.
+- **[G21]** Tool-friction lines show the failing command and its real error line.
+  - Status: Done (orchestration 8). `1c4a6d6` shows the first line with an error marker; entries with none are dropped. SPEC `bcaac5d`.
 - **[G19]** Directives come from the session only. The generic fallback is removed.
   - Status: Done (orchestration 7, `planning/STATE_7.md`). `579b758` writes `- None detected.` when no error matches a pattern or there are no errors. SPEC `planning` commit follows. `make test` 56 passed, 2 xfailed. Real PROJECT_MEMORY.md files show the old fallback until the next distill.
 - **[G18]** PROJECT_MEMORY.md is rebuilt from the session `memory.md` files, not appended to.
