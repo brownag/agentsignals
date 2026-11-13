@@ -1,7 +1,7 @@
 # Project Goals (`planning/GOALS.md`)
 
 Last Updated: 2026-11-12
-Source State: magic-wand re-rank after G14 closed (focus: PROJECT_MEMORY.md quality). Prior: STATE_4.md.
+Source State: STATE_5.md (orchestration 5: G15 done; G18 circled). Focus: PROJECT_MEMORY.md quality.
 
 Intent: durable indexing of Claude session history from volatile `/tmp/claude-1000` before deletion, on Sway/Wayland, with systemd and Waybar included. Current focus: the mined per-project memory (`~/.claude-mined-memories/<slug>/PROJECT_MEMORY.md`) is correct, derived, and worth reading.
 
@@ -16,20 +16,13 @@ Evidence (2026-11-12, `~/.claude-mined-memories`): 8 project files, 22 sections;
 
 ## Circled Goal (Active)
 
-- **[G15]** SPEC §4.2 (distiller) is specified and tested, including the PROJECT_MEMORY.md format.
-  - Why now: every fix to the project memory changes `claudalizer/distiller.py`. Without tests that pin the current behaviour and the target behaviour, the fixes can't be checked. This goal unblocks G18–G21.
-  - Exit criteria: SPEC §4.2 states the PROJECT_MEMORY.md format and the five criteria above. Each one has a test in `tests/test_distiller.py`. Tests that describe target behaviour that is not yet built (duplicates on `--force`, generic fallback) are marked `xfail` with the goal id. `make test` passes.
-  - First action: add a PROJECT_MEMORY subsection to `planning/SPEC.md` §4.2, then write the tests against `synthesize_offline_memory_block` and `_append_to_project_memory` using `tmp_path`.
-  - Depends on: none.
-  - Files in scope: `planning/SPEC.md`, `tests/test_distiller.py` (new), `tests/conftest.py` only if a fixture is needed.
-
-## Sequenced Goals (Dependency DAG)
-
 - **[G18]** PROJECT_MEMORY.md is rebuilt from the session `memory.md` files, not appended to.
   - Why here: fixes the duplicate-on-`--force` risk and keeps the file in sync with the session files it summarises.
   - Exit criteria: distilling the same session twice with `--force` leaves one section for it. The G15 duplicate test turns from `xfail` to pass. `make test` passes.
-  - Depends on: G15 (test for the duplicate case must exist first).
+  - Depends on: none. G15 is done; the duplicate test exists as a strict xfail in `tests/test_distiller.py`.
   - Files in scope: `claudalizer/distiller.py` (`_append_to_project_memory`, `distill_session`), `tests/test_distiller.py`.
+
+## Sequenced Goals (Dependency DAG)
 
 - **[G19]** Directives come from the session only. The generic fallback is removed.
   - Why here: 17 of 22 sections carry the same line. It is noise, and it hides the sections that do have content.
@@ -76,6 +69,14 @@ Evidence (2026-11-12, `~/.claude-mined-memories`): 8 project files, 22 sections;
   - Trigger: before lint is wired into CI or a release.
 
 ## Done
+
+- **[G15]** SPEC §4.2 (distiller) is specified and tested, including the PROJECT_MEMORY.md format.
+  - Why now: every fix to the project memory changes `claudalizer/distiller.py`. Without tests that pin the current behaviour and the target behaviour, the fixes can't be checked. This goal unblocks G18–G21.
+  - Status: Done (orchestration 5: `e51e29d` SPEC §3.2/§4.2; `eb8e5da` `tests/test_distiller.py`, 8 passed and 4 strict xfail for G18–G21; `make test` 48 passed, 4 xfailed).
+  - Original exit criteria: SPEC §4.2 states the PROJECT_MEMORY.md format and the five criteria above. Each one has a test in `tests/test_distiller.py`. Tests that describe target behaviour that is not yet built (duplicates on `--force`, generic fallback) are marked `xfail` with the goal id. `make test` passes.
+  - First action: add a PROJECT_MEMORY subsection to `planning/SPEC.md` §4.2, then write the tests against `synthesize_offline_memory_block` and `_append_to_project_memory` using `tmp_path`.
+  - Depends on: none.
+  - Files in scope: `planning/SPEC.md`, `tests/test_distiller.py` (new), `tests/conftest.py` only if a fixture is needed.
 
 - **[G14]** The Waybar refresh signal is confirmed not to terminate Waybar on this machine, before the G4 code is installed.
   - Status: Done (orchestration 4, `planning/STATE_4.md` `## T4.1.1`). Headless probe on a renamed Waybar 0.9.24 copy under Sway 1.9: `RESULT: survives-RTMIN8=yes`; positive control (`"signal": 8` module) `refresh-with-signal8=yes`; `path=survives`. No code change. G4 keeps `pkill -RTMIN+8 waybar`.
