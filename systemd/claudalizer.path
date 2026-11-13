@@ -1,0 +1,11 @@
+[Unit]
+Description=Claudalizer User Path Monitor
+Documentation=https://github.com/example/claudalizer
+ConditionPathExists=/tmp/claude-1000
+
+[Path]
+PathModified=/tmp/claude-1000
+Unit=claudalizer.service
+
+[Install]
+WantedBy=paths.target

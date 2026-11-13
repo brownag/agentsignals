@@ -1,0 +1,14 @@
+[Unit]
+Description=Claudalizer Session Miner and Behavioral Memory Distiller
+Documentation=https://github.com/example/claudalizer
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/claudalizer scan --notify
+StandardOutput=journal
+StandardError=journal
+Nice=19
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=default.target
