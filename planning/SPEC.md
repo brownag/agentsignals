@@ -20,7 +20,7 @@ claudalizer captures, isolates, and distills high-value behavioral metadata from
           `[distiller.py] ────────► OpenAI / llama.cpp HTTP Endpoint`  
                  `│                         │`  
                  `▼                         ▼`  
-         `Structured Rules ───────► Appends to ~/.claude/projects/<slug>/CLAUDE.md`  
+         `Structured Rules ───────► Writes ~/.claude-mined-memories/<slug>/PROJECT\_MEMORY.md`  
                  `│`  
                  `▼`  
              `[ipc.py] ───────────► Sway IPC / Hyprland IPC / Waybar / notify-send`
@@ -49,7 +49,7 @@ claudalizer captures, isolates, and distills high-value behavioral metadata from
 `└── tests/`  
     `├── conftest.py          # Shared fixtures (mock /tmp, mock transcripts, mock sockets)`  
     `├── test_miner.py        # Slug parsing, artifact discovery, JSONL extraction`  
-    `├── test_distiller.py    # Payload creation, mock HTTP API responses, CLAUDE.md appending`  
+    `├── test_distiller.py    # Synthesis, offline fallback, PROJECT_MEMORY.md sections, xfail targets for G18–G21`  
     `└── test_ipc.py          # Compositor dispatch logic and command verification`
 
 ## **3\. Module Specifications**
@@ -120,38 +120,39 @@ The miner must write atomic JSON output to:
 
 Skipped files are not copied; each is listed in `skipped_files` with its reason (`oversized`, `binary`, or `unreadable`).
 
-### **3.2 distiller.py: Prompt Synthesis & OpenAI-Compatible Engine**
+### **3.2 distiller.py: Synthesis & PROJECT\_MEMORY.md**
 
-#### **API Request Contract**
+#### **Outputs per session**
 
-The client must target any OpenAI-compatible completions endpoint (POST /v1/chat/completions) using pure urllib.request. It must work against llama.cpp (http\://localhost:8080/v1), Ollama (http\://localhost:11434/v1), vLLM, or remote providers.
+Each distilled session writes two things:
 
-> * **Headers:** Content-Type: application/json, Authorization: Bearer \<API\_KEY\> (defaulting to "EMPTY" or "none" if omitted for local engines).  
-> * **Default Parameters:**  
-  * temperature: 0.1 (low variance for analytical distillation)  
-  * max\_tokens: 1024  
-  * model: Configurable via CLI flag \--model (defaults to "local-model").
+* `<memories_root>/<slug>/<session_id>/memory.md`: the session's memory block. A second call without `force` returns this file unchanged.
+* `<memories_root>/<slug>/PROJECT_MEMORY.md`: the per-project file, one section per session. Today it is appended to on every write. The target rule is in the PROJECT\_MEMORY.md format below **(target, G18)**.
 
-#### **Fallback Mode**
+#### **Synthesis**
 
-If \--llm-endpoint is not supplied or fails to respond after 1 retry with a 5-second timeout, distiller.py must fall back to generating an offline markdown distillation file:
+* If an LLM endpoint is given, `call_llm_completion` sends the prompt from `build_synthesis_prompt` to an OpenAI-compatible `/v1/chat/completions` endpoint, using stdlib `urllib`. Non-empty text in the reply becomes the memory block.
+* If there is no endpoint, or the call returns nothing, `synthesize_offline_memory_block` builds the block from the dossier. No network access.
 
-\~/.claude-mined-memories/\<project\_slug\>/\<session\_id\>/distillation\_prompt.md.
+#### **Offline block format**
 
-#### **Memory Block Target Format**
+The block starts with `# Mined Behavioral Memory for <slug>` and a `**Source Directory:**` line, then three sections in this order:
 
-When appended to .claude/CLAUDE.md, output must adhere to this exact structural schema:
+1. `### 1. Tool / Skill Friction`: one line per failing tool call, or `- None detected.` when there are none. Target rule for the line content: see G21 below.
+2. `### 2. Blind Alleys & Discarded Spikes`: one line per scratchpad file, or `- No ephemeral scratchpads recorded.`
+3. `### 3. Directives for CLAUDE.md`: directives inferred from the tool errors. Today three error patterns are matched (a missing Python environment, a missing binary, a Cargo error). When none match, today's code writes the fallback line `Maintain strict idempotency and check environment variables before execution.` **(target, G19)**: write `- None detected.` instead.
 
-`<!-- CLAUDALIZER:START:{session_id_short} -->`  
-`### Workflow Memory: Session {session_id_short} [{date}]`  
-`- **Objective:** {concise intent}`  
-`- **Tool Gotchas & Quirks:**`  
-  ``- `{tool_name}`: {exact argument mismatch, missing library flag, or behavioral constraint}``  
-`- **Discarded Approaches:**`  
-  ``- `{approach}`: Abandoned due to {reason}.``  
-`- **Actionable Directive:**`  
-  `- {Imperative instruction to prevent repeating this error loop}`  
-`<!-- CLAUDALIZER:END:{session_id_short} -->`
+#### **PROJECT\_MEMORY.md format**
+
+* Each session adds one section: a blank line, `---`, then the heading `## Session <first 8 characters of session id> Distillation`, then the session's block.
+* One section per session. Distilling the same session again with `force` must leave exactly one section for it **(target, G18)**. The target is to rebuild the file from the per-session `memory.md` files on each run, instead of appending.
+* Target rule for blind-alleys **(target, G20)**: scratchpad paths that come from the claudalizer's own test runs (`g3-accept`, `rewrite-check`) are dropped. If nothing else remains, the line is `- No ephemeral scratchpads recorded.`
+* Target rule for friction lines **(target, G21)**: each line names the failing command and its first error line. A failing call with no error text is dropped, not written as a bare `Exit code N` line.
+
+#### **Control flow**
+
+* `distill_session(slug, session_id, llm_endpoint, llm_model, force)`: returns `None` if there is no `dossier.json`. Returns the existing `memory.md` path if the file exists and `force` is false. Otherwise it writes `memory.md`, then appends to `PROJECT_MEMORY.md`, and returns the `memory.md` path.
+* `distill_all(target_slug, ...)`: walks every slug directory and session directory under the memories root. `target_slug` limits the walk to one slug.
 
 ### **3.3 ipc.py: Window Manager & Notification Integration**
 
@@ -198,11 +199,29 @@ Review criteria will reject any PR without automated testing covering edge-case 
 > * **test\_jsonl\_corrupt\_recovery**: Feed a transcript containing half-written lines, truncated JSON, and non-UTF-8 characters. Verify extraction continues without raising unhandled exceptions.  
 > * **test\_git\_state\_filtering**: Ensure clean exit codes and standard tool executions do not leak into tool\_failures.
 
-### **4.2 Distillation & HTTP (test\_distiller.py)**
+### **4.2 Distillation (test\_distiller.py)**
 
-> * **test\_openai\_payload\_structure**: Intercept outgoing requests with unittest.mock.patch to verify headers, schema, model, and temperature.  
-> * **test\_endpoint\_unreachable\_fallback**: Point to an invalid port (e.g., http\://localhost:59999/v1). Verify that a markdown fallback file is created and the program exits cleanly with code 0\.  
-> * **test\_claude\_md\_idempotent\_append**: Verify that re-running distillation for the same session ID updates the existing block between \<\!-- CLAUDALIZER:START:{id} \--\> tags rather than creating duplicate entries.
+Tests create a `MemoryDistiller` with `memories_root=tmp_path`, and mock `call_llm_completion` in any test that passes an endpoint. No test makes a network call or touches the real memories root.
+
+Characterisation tests (must pass on current code):
+
+> * **test\_offline\_block\_has\_three\_sections\_in\_order**: The three `### N.` headings appear in order in the offline block.
+> * **test\_distill\_session\_writes\_memory\_md\_and\_project\_memory**: `memory.md` exists, and `PROJECT_MEMORY.md` contains `## Session <id[:8]> Distillation`.
+> * **test\_distill\_session\_skips\_existing\_memory\_without\_force**: A second call without `force` returns the existing path and does not append again.
+> * **test\_llm\_block\_used\_when\_endpoint\_returns\_content**: With a mocked LLM reply, `memory.md` contains the reply text.
+> * **test\_offline\_fallback\_when\_llm\_returns\_nothing**: With a mocked empty reply, `memory.md` contains `# Mined Behavioral Memory`.
+> * **test\_distill\_all\_respects\_target\_slug**: With two slugs, `target_slug` limits the output to one.
+> * **test\_python\_error\_maps\_to\_venv\_directive**: A `No such file or directory` error mentioning `python` yields the virtualenv directive.
+> * **test\_synthesis\_prompt\_mentions\_errors\_and\_scratchpads**: `build_synthesis_prompt` output contains the failing command and a scratchpad path.
+
+Target behaviour (marked `xfail(strict=True)` with the goal id in the reason; each test flips to pass when its goal lands):
+
+> * **test\_force\_redistill\_does\_not\_duplicate\_project\_section** (G18): Distilling one session twice with `force` leaves exactly one `## Session <id[:8]> Distillation` heading.
+> * **test\_no\_matching\_error\_shows\_none\_detected\_not\_fallback\_directive** (G19): With no matching error, the directives section says `None detected` and does not contain `Maintain strict idempotency`.
+> * **test\_test\_runner\_scratch\_excluded\_from\_blind\_alleys** (G20): Scratchpad paths under `g3-accept/` and `rewrite-check/` do not appear in blind-alleys.
+> * **test\_friction\_line\_shows\_real\_error\_text** (G21): A failing `pytest` call shows its error line in the friction section. A failing call with no error text is not written as a bare `Exit code` line.
+
+Criterion 5 of GOALS.md G15 (the format is written down) is checked by the grep acceptance for this spec, not by a test.
 
 ### **4.3 IPC & Environments (test\_ipc.py)**
 
@@ -539,169 +558,7 @@ Response: Here are the complete test suites for tests/test\_distiller.py and tes
 
 ### **tests/test\_distiller.py**
 
-`"""`  
-`tests/test_distiller.py - Unit test suite for claudalizer/distiller.py.`  
-`Validates OpenAI-compatible HTTP requests (llama.cpp/Ollama), fallback to offline`  
-`Markdown synthesis upon network/server failure, and idempotent CLAUDE.md updates.`  
-`"""`
-
-`import json`  
-`from pathlib import Path`  
-`import urllib.error`  
-`from unittest.mock import MagicMock, patch`  
-`import pytest`
-
-`from claudalizer.distiller import (`  
-    `build_distillation_prompt,`  
-    `call_openai_completion,`  
-    `distill_session,`  
-    `append_to_claude_md,`  
-`)`
-
-`@pytest.fixture`  
-`def sample_dossier():`  
-    `return {`  
-        `"version": "1.0",`  
-        `"project_slug": "-home-user-src-repo",`  
-        `"project_path": "/home/user/src/repo",`  
-        `"session_id": "c1f7c352-7e0e-4e4f-b6bb-374fa6ceb804",`  
-        `"mined_at": "2026-11-12T16:53:00Z",`  
-        `"workflow_metrics": {`  
-            `"scratchpad_artifact_count": 1,`  
-            `"tool_calls_total": 8,`  
-            `"tool_failures_total": 1,`  
-        `},`  
-        `"intent_prompts": [`  
-            `"Compile custom C++ dynamic library and configure pkg-config bindings"`  
-        `],`  
-        `"tool_failures": [`  
-            `{`  
-                `"tool": "Bash",`  
-                `"command": "g++ -shared -fPIC ...",`  
-                `"error_snippet": "fatal error: gdal.h: No such file or directory",`  
-            `}`  
-        `],`  
-        `"scratchpad_files": [`  
-            `{`  
-                `"relative_path": "repro.sh",`  
-                `"byte_size": 180,`  
-                `"archived_path": "scratchpad_archive/repro.sh",`  
-            `}`  
-        `],`  
-    `}`
-
-`class TestDistillationPromptBuilder:`  
-    `"""Verifies synthesis of LLM prompt payloads from session dossiers."""`
-
-    `def test_prompt_includes_core_signals(self, sample_dossier):`  
-        `prompt = build_distillation_prompt(sample_dossier, scratchpad_contents={"repro.sh": "echo 'build'"})`
-
-        `assert "/home/user/src/repo" in prompt`  
-        `assert "c1f7c352" in prompt`  
-        `assert "fatal error: gdal.h" in prompt`  
-        `assert "Compile custom C++ dynamic library" in prompt`  
-        `assert "echo 'build'" in prompt`
-
-`class TestOpenAICompatibleCompletions:`  
-    `"""Tests interaction with local llama.cpp / Ollama endpoints via urllib."""`
-
-    `@patch("urllib.request.urlopen")`  
-    `def test_openai_payload_structure(self, mock_urlopen, sample_dossier):`  
-        `mock_response = MagicMock()`  
-        `mock_response.read.return_value = json.dumps({`  
-            `"choices": [`  
-                `{`  
-                    `"message": {`  
-                        ``"content": "### Workflow Memory: Session c1f7c352 [2026-11-12]\n- **Objective:** Build C++ bindings\n- **Tool Gotchas & Quirks:**\n  - `Bash`: g++ requires explicit -I/usr/include/gdal header paths.\n- **Actionable Directive:** Check pkg-config --cflags gdal before compiling."``  
-                    `}`  
-                `}`  
-            `]`  
-        `}).encode("utf-8")`  
-        `mock_response.__enter__.return_value = mock_response`  
-        `mock_urlopen.return_value = mock_response`
-
-        `endpoint = "http://localhost:8080/v1"`  
-        `content = call_openai_completion(`  
-            `endpoint=endpoint,`  
-            `prompt="Test prompt",`  
-            `model="local-model",`  
-            `api_key="custom-key",`  
-            `temperature=0.1,`  
-            `max_tokens=1024,`  
-        `)`
-
-        `assert mock_urlopen.called`  
-        `req = mock_urlopen.call_args[0][0]`  
-        `assert req.get_full_url() == "http://localhost:8080/v1/chat/completions"`  
-        `assert req.headers["Content-type"] == "application/json"`  
-        `assert req.headers["Authorization"] == "Bearer custom-key"`
-
-        `payload = json.loads(req.data.decode("utf-8"))`  
-        `assert payload["model"] == "local-model"`  
-        `assert payload["temperature"] == 0.1`  
-        `assert payload["max_tokens"] == 1024`  
-        `assert payload["messages"][0]["role"] == "user"`  
-        `assert payload["messages"][0]["content"] == "Test prompt"`
-
-        `assert "Build C++ bindings" in content`
-
-    `@patch("urllib.request.urlopen")`  
-    `def test_endpoint_unreachable_fallback(self, mock_urlopen, tmp_path, sample_dossier):`  
-        `"""When the LLM endpoint fails, distiller writes a fallback markdown prompt."""`  
-        `mock_urlopen.side_effect = urllib.error.URLError("Connection refused")`
-
-        `session_dir = tmp_path / "mined" / sample_dossier["project_slug"] / sample_dossier["session_id"]`  
-        `session_dir.mkdir(parents=True)`  
-        `(session_dir / "session_memory.json").write_text(json.dumps(sample_dossier), encoding="utf-8")`
-
-        `result = distill_session(`  
-            `session_dir=session_dir,`  
-            `endpoint="http://localhost:59999/v1",`  
-            `model="local-model",`  
-            `apply_to_claude_md=False,`  
-        `)`
-
-        `# Distiller must gracefully degrade to offline fallback without crashing`  
-        `assert result["status"] == "fallback_written"`  
-        `fallback_file = session_dir / "distillation_prompt.md"`  
-        `assert fallback_file.exists()`  
-        `assert "fatal error: gdal.h" in fallback_file.read_text(encoding="utf-8")`
-
-`class TestClaudeMdIdempotency:`  
-    `"""Tests updating and idempotent replacement inside project CLAUDE.md files."""`
-
-    `def test_claude_md_idempotent_append(self, tmp_path):`  
-        `claude_md = tmp_path / "CLAUDE.md"`  
-        `claude_md.write_text("# Project Notes\n\nSome initial instructions.\n", encoding="utf-8")`
-
-        `session_id = "c1f7c352-7e0e-4e4f-b6bb-374fa6ceb804"`  
-        `initial_block = (`  
-            `"- **Objective:** Initial run\n"`  
-            `"- **Tool Gotchas & Quirks:**\n"`  
-            ``"  - `Bash`: Initial error\n"``  
-        `)`  
-        `updated_block = (`  
-            `"- **Objective:** Updated run with resolved bindings\n"`  
-            `"- **Tool Gotchas & Quirks:**\n"`  
-            ``"  - `Bash`: Corrected library linkage flags\n"``  
-        `)`
-
-        `# First application`  
-        `append_to_claude_md(claude_md, session_id=session_id, memory_block=initial_block)`  
-        `first_content = claude_md.read_text(encoding="utf-8")`
-
-        `assert "<!-- CLAUDALIZER:START:c1f7c352 -->" in first_content`  
-        `assert "<!-- CLAUDALIZER:END:c1f7c352 -->" in first_content`  
-        `assert "Initial error" in first_content`
-
-        `# Second application for same session ID must update in-place without duplicating tags`  
-        `append_to_claude_md(claude_md, session_id=session_id, memory_block=updated_block)`  
-        `second_content = claude_md.read_text(encoding="utf-8")`
-
-        `assert second_content.count("<!-- CLAUDALIZER:START:c1f7c352 -->") == 1`  
-        `assert second_content.count("<!-- CLAUDALIZER:END:c1f7c352 -->") == 1`  
-        `assert "Corrected library linkage flags" in second_content`  
-        `assert "Initial error" not in second_content`
+Superseded. The skeleton that stood here named functions the distiller does not have, and tested CLAUDE.md injection, which goal G12 pruned. The test list is in §4.2. The file is written against §4.2 (orchestration 5, T5.2.1).
 
 ### **tests/test\_ipc.py**
 
