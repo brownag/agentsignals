@@ -50,6 +50,9 @@ _(none. Every goal in the project-memory focus is done: G15, G18, G19, G20, G21.
 
 ## Done
 
+- **[G_memlab]** Memory blocks say what each session was for, and the LLM path works without extra flags.
+  - Status: Done in code (orchestration 9, `planning/STATE_9.md`): `d3ebd6f` (endpoint from `CLAUDALIZER_LLM_ENDPOINT`; thinking off; 1024 tokens; 300 s timeout; empty reply warns), `fd42669` (Objective line in the offline block), `3a33a05` (SPEC). `make test` 73 passed. Real-data run pending (user): `CLAUDALIZER_LLM_ENDPOINT=http://localhost:8090/v1/chat/completions claudalizer distill --force`.
+  - Open: LLM-written blocks have no title or Objective line (decision pending).
 - **[G_scan]** `claudalizer scan` mines sessions whose transcript changed, and says what it skipped.
   - Status: Done (`b515b9e`). Before: a transcript-only change was never re-mined (23 sessions in the real data), and skipped sessions were silent, so scan printed `Mined 0`. Now the skip check also compares the transcript mtime, and scan prints `Skipped: N active, N already up to date, N with no content`, naming the active sessions. Tests in `tests/test_scan_report.py`. `make test` 65 passed.
 - **[G20]** The blind-alleys list excludes the claudalizer's own test scratch.
