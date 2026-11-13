@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import tempfile
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -235,14 +236,44 @@ class MemoryDistiller:
         return memory_md
 
     def _append_to_project_memory(self, slug: str, memory_block: str, session_id: str) -> None:
-        """Append memory block to ~/.claude-mined-memories/<slug>/PROJECT_MEMORY.md."""
+        """Rebuild ~/.claude-mined-memories/<slug>/PROJECT_MEMORY.md from every session's memory.md.
+
+        The caller has already written memory_block to the session's memory.md, so it is not
+        used here. It stays in the signature so the call site does not change. Sections are
+        ordered by dossier scan_timestamp, then session id. Hand edits are overwritten.
+        """
         proj_dir = self.memories_root / slug
         proj_dir.mkdir(parents=True, exist_ok=True)
         proj_memory_file = proj_dir / "PROJECT_MEMORY.md"
 
-        header = f"\n\n---\n## Session {session_id[:8]} Distillation\n"
-        with open(proj_memory_file, "a", encoding="utf-8") as f:
-            f.write(header + memory_block + "\n")
+        sessions = []
+        for sess_dir in proj_dir.iterdir():
+            if not sess_dir.is_dir() or sess_dir.name.startswith("."):
+                continue
+            dossier_json = sess_dir / "dossier.json"
+            memory_md = sess_dir / "memory.md"
+            if not (dossier_json.exists() and memory_md.exists()):
+                continue
+            try:
+                stamp = json.loads(dossier_json.read_text(encoding="utf-8")).get("scan_timestamp") or ""
+            except (OSError, ValueError):
+                stamp = ""
+            sessions.append((str(stamp), sess_dir.name, memory_md))
+
+        parts = []
+        for _stamp, name, memory_md in sorted(sessions, key=lambda t: (t[0], t[1])):
+            text = memory_md.read_text(encoding="utf-8")
+            parts.append(f"\n\n---\n## Session {name[:8]} Distillation\n" + text)
+        content = "".join(parts)
+
+        fd, tmp_name = tempfile.mkstemp(dir=proj_dir, prefix=".PROJECT_MEMORY.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(content)
+            os.replace(tmp_name, proj_memory_file)
+        except BaseException:
+            Path(tmp_name).unlink(missing_ok=True)
+            raise
 
     def distill_all(
         self,

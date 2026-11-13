@@ -153,7 +153,6 @@ def test_synthesis_prompt_mentions_errors_and_scratchpads():
 # --- Strict xfail: target behaviour owned by G18-G21 -------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="G18: PROJECT_MEMORY rebuilt from session files, not appended")
 def test_force_redistill_does_not_duplicate_project_section(tmp_path):
     root = tmp_path / "memories"
     _write_dossier(root, "-slug-a", "abcdef12-3456", _dossier(slug="-slug-a"))
@@ -164,6 +163,81 @@ def test_force_redistill_does_not_duplicate_project_section(tmp_path):
 
     project = (root / "-slug-a" / "PROJECT_MEMORY.md").read_text(encoding="utf-8")
     assert project.count("## Session abcdef12 Distillation") == 1
+
+
+def test_rebuild_changes_only_the_redistilled_session_text(tmp_path):
+    root = tmp_path / "memories"
+    _write_dossier(root, "-slug-a", "aaaa1111-0001", _dossier(slug="-slug-a", session_id="aaaa1111-0001", scan_timestamp="2026-01-01"))
+    _write_dossier(root, "-slug-a", "bbbb2222-0002", _dossier(slug="-slug-a", session_id="bbbb2222-0002", scan_timestamp="2026-01-02"))
+    distiller = MemoryDistiller(memories_root=root)
+    distiller.distill_session("-slug-a", "aaaa1111-0001")
+    distiller.distill_session("-slug-a", "bbbb2222-0002")
+
+    dossier_a = _dossier(
+        slug="-slug-a",
+        session_id="aaaa1111-0001",
+        scan_timestamp="2026-01-01",
+        tool_errors=[{"tool_name": "Bash", "command_or_input": "make NEWA", "error_output": "Exit code 2", "exit_code": 2}],
+    )
+    (root / "-slug-a" / "aaaa1111-0001" / "dossier.json").write_text(json.dumps(dossier_a), encoding="utf-8")
+    distiller.distill_session("-slug-a", "aaaa1111-0001", force=True)
+
+    project = (root / "-slug-a" / "PROJECT_MEMORY.md").read_text(encoding="utf-8")
+    assert project.count("make NEWA") == 1
+    b_text = (root / "-slug-a" / "bbbb2222-0002" / "memory.md").read_text(encoding="utf-8")
+    assert b_text in project
+    assert project.index("## Session aaaa1111") < project.index("## Session bbbb2222")
+
+
+def test_rebuild_orders_sessions_by_scan_timestamp(tmp_path):
+    root = tmp_path / "memories"
+    _write_dossier(root, "-slug-a", "zzzz0000-0001", _dossier(slug="-slug-a", session_id="zzzz0000-0001", scan_timestamp="2026-01-02"))
+    _write_dossier(root, "-slug-a", "aaaa0000-0002", _dossier(slug="-slug-a", session_id="aaaa0000-0002", scan_timestamp="2026-01-01"))
+    distiller = MemoryDistiller(memories_root=root)
+    distiller.distill_session("-slug-a", "zzzz0000-0001")
+    distiller.distill_session("-slug-a", "aaaa0000-0002")
+
+    project = (root / "-slug-a" / "PROJECT_MEMORY.md").read_text(encoding="utf-8")
+    assert project.index("## Session aaaa0000") < project.index("## Session zzzz0000")
+
+
+def test_rebuild_skips_session_without_memory_md(tmp_path):
+    root = tmp_path / "memories"
+    _write_dossier(root, "-slug-a", "abcdef12-3456", _dossier(slug="-slug-a"))
+    _write_dossier(root, "-slug-a", "nomemo00-0001", _dossier(slug="-slug-a", session_id="nomemo00-0001"))
+    distiller = MemoryDistiller(memories_root=root)
+    distiller.distill_session("-slug-a", "abcdef12-3456")
+
+    project =(root / "-slug-a" / "PROJECT_MEMORY.md").read_text(encoding="utf-8")
+    assert "## Session nomemo00" not in project
+    assert "## Session abcdef12" in project
+
+
+def test_rebuild_is_idempotent(tmp_path):
+    root = tmp_path / "memories"
+    _write_dossier(root, "-slug-a", "abcdef12-3456", _dossier(slug="-slug-a"))
+    distiller = MemoryDistiller(memories_root=root)
+    distiller.distill_session("-slug-a", "abcdef12-3456")
+    path = root / "-slug-a" / "PROJECT_MEMORY.md"
+    first = path.read_bytes()
+
+    distiller.distill_session("-slug-a", "abcdef12-3456", force=True)
+
+    assert path.read_bytes() == first
+
+
+def test_rebuild_discards_hand_edits_outside_session_files(tmp_path):
+    root = tmp_path / "memories"
+    proj = root / "-slug-a"
+    proj.mkdir(parents=True)
+    (proj / "PROJECT_MEMORY.md").write_text("hand notes\n", encoding="utf-8")
+    _write_dossier(root, "-slug-a", "abcdef12-3456", _dossier(slug="-slug-a"))
+
+    MemoryDistiller(memories_root=root).distill_session("-slug-a", "abcdef12-3456")
+
+    project = (proj / "PROJECT_MEMORY.md").read_text(encoding="utf-8")
+    assert "hand notes" not in project
+    assert "## Session abcdef12 Distillation" in project
 
 
 @pytest.mark.xfail(strict=True, reason="G19: generic fallback directive removed")
