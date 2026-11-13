@@ -1,34 +1,36 @@
 # Project Goals (`planning/GOALS.md`)
 
 Last Updated: 2026-11-12
-Source State: STATE_1.md (G1 closed at ff66a16; orchestration 2 drafted, awaiting approval)
+Source State: STATE_2.md (orchestration 2 done: G5, G6, G7, G9 closed)
 
 Intent: durable indexing of Claude session history from volatile `/tmp/claude-1000` before deletion, on Sway/Wayland, with systemd and Waybar included.
 
 ## Circled Goal (Active)
 
-- **[G5]** Compositor detection picks Sway only when Sway is running (`ipc.py:57` glob result is a generator, always truthy). It is the first task of `planning/EXECUTION_PLAN_2.md` (T2.1.1), and it gates G4.
-  - Why now: G1 is closed. Orchestration 2 (G5, G6, G7, G9) is drafted and waits for user approval.
+- None active. Orchestration 2 (G5, G6, G7, G9) is done on `g5-g6-g7-g9`. The next candidates are below.
+  - Next: **G4** (needs the user's live G3 timing check, then G4 can start) or **G11** (independent cleanup).
 
 ## Done (recent)
 
 - **[G1]** Every session scratchpad file is in `~/.claude-mined-memories` before `/tmp/claude-1000` is deleted, with no silent drops.
-  - Status: Done (commits `72d3ff6`, `efa23c8`, `ff66a16`; `make check` exit 0). Oversized and binary files are stubs; skipped-only sessions get a dossier; SPEC §4.1 `test_filter_oversized_scratchpad` passes.
+  - Status: Done (`72d3ff6`, `efa23c8`, `ff66a16`; `make check` exit 0). Oversized and binary files are stubs; skipped-only sessions get a dossier; SPEC §4.1 `test_filter_oversized_scratchpad` passes.
   - Size policy: 250 KiB (`MAX_SCRATCHPAD_FILE_BYTES`), a default that can change without a redesign.
+- **[G5]** Compositor detection picks Sway only when a Sway socket exists.
+  - Status: Done (`f547fe8`; `tests/test_ipc.py`, 5 passed).
+- **[G6]** systemd path unit triggers only on a non-empty scan directory.
+  - Status: Done (`21c8fad`; `DirectoryNotEmpty=/tmp/claude-1000`; `make systemd-dry-run` exit 0; not installed, which is user-run).
+- **[G7]** Failed tool results are kept; successful git and Edit/Write results are filtered; exit code 0 is not a failure; README matches.
+  - Status: Done (`2c0a311`, `0c7354f`).
+- **[G9]** SPEC §4.1 and §4.3 tests exist and pass.
+  - Status: Done (`test_slug_decoding`, `test_filter_oversized_scratchpad`, `test_jsonl_corrupt_recovery`, `test_git_state_filtering`; `test_sway_dispatch_when_swaysock_present`, `test_hyprland_dispatch`, `test_headless_environment_no_crash`). SPEC §4.2 (distiller) is not covered.
 
 ## Sequenced Goals (Dependency DAG)
 
-- **[G9]** The four spec tests (SPEC.md §4.1) exist and pass for G1 and G2.
-  - Depends on: G1, G2 (G2 done)
-- **[G7]** Failed tool results are kept in the index, and the noise filter matches the README.
-  - Depends on: G1
 - **[G4]** Waybar shows current capture state and refreshes after each scan.
-  - Depends on: G3 (implemented, live timing check pending), G5
+  - Depends on: G3 (implemented, live timing check pending, user-run), G5 (done)
 
 ## Independent Backlog
 
-- **[G6]** systemd units are correct on install: `DirectoryNotEmpty=` is set on `claudalizer.path`. (`daemon-reload` and the watch unit are already in place.) Verified missing in `systemd/claudalizer.path`.
-  - Depends on: none
 - **[G11]** Duplicate setup code and dead fields are removed (`cli.py:36-66`, `cli.py:94-117`, `ipc.py:140-151`).
   - Depends on: none
 
