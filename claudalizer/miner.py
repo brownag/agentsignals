@@ -435,8 +435,18 @@ class SessionMiner:
         )
 
         dossier_dir.mkdir(parents=True, exist_ok=True)
-        with open(dossier_json, "w", encoding="utf-8") as f:
-            json.dump(dossier.to_dict(), f, indent=2)
+        # Write to a temp file, sync it, then rename over the old dossier so a crash
+        # never leaves a half-written dossier.json.
+        tmp_json = dossier_json.with_name(dossier_json.name + ".tmp")
+        try:
+            with open(tmp_json, "w", encoding="utf-8") as f:
+                json.dump(dossier.to_dict(), f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_json, dossier_json)
+        except BaseException:
+            tmp_json.unlink(missing_ok=True)
+            raise
 
         logger.info(f"Mined dossier for {slug}/{session_id}: {len(tool_errors)} errors, {len(copied_files)} files.")
         return dossier

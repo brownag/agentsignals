@@ -15,6 +15,7 @@ from claudalizer.miner import (
     file_lock,
     is_file_settled,
 )
+import claudalizer.miner as miner_module
 from claudalizer.distiller import MemoryDistiller, build_synthesis_prompt, synthesize_offline_memory_block
 from claudalizer.ipc import detect_compositor, emit_waybar_signal
 from claudalizer.cli import main as cli_main
@@ -263,6 +264,66 @@ def test_skipped_session_is_mined_on_next_scan(tmp_path):
         os.utime(p, (old, old))
     dossiers = miner.scan_and_mine(debounce=True)
     assert [d.session_id for d in dossiers] == [session_id]
+
+
+def _make_mineable_session(tmp_root, claude_projects, slug, session_id):
+    scratch = tmp_root / slug / session_id / "scratchpad"
+    scratch.mkdir(parents=True)
+    (scratch / "probe.py").write_text("# probe", encoding="utf-8")
+    proj = claude_projects / slug
+    proj.mkdir(parents=True)
+    with open(proj / f"{session_id}.jsonl", "w", encoding="utf-8") as f:
+        f.write(json.dumps({"type": "user", "message": {"content": "Atomic dossier write probe prompt"}}) + "\n")
+    return scratch
+
+
+def test_failed_dossier_write_keeps_previous_dossier(tmp_path, monkeypatch):
+    tmp_root = tmp_path / "tmp_claude"
+    claude_projects = tmp_path / "projects"
+    memories_root = tmp_path / "memories"
+    slug = "-home-andrew-AI-claudalizer"
+    session_id = "atomic-session-uuid"
+    scratch = _make_mineable_session(tmp_root, claude_projects, slug, session_id)
+
+    miner = SessionMiner(tmp_root=tmp_root, claude_projects=claude_projects,
+                         memories_root=memories_root, lock_file=tmp_path / "miner.lock")
+    first = miner._mine_session(slug, None, session_id, scratch, force=True)
+    assert first is not None
+    dossier_json = memories_root / slug / session_id / "dossier.json"
+    before = dossier_json.read_text(encoding="utf-8")
+
+    # Make the next write fail partway through, as if the process crashed
+    real_dump = json.dump
+
+    def partial_dump(obj, fp, **kwargs):
+        fp.write('{"session_id": "trunc')
+        raise OSError("simulated crash during dossier write")
+
+    monkeypatch.setattr(miner_module.json, "dump", partial_dump)
+    with pytest.raises(OSError):
+        miner._mine_session(slug, None, session_id, scratch, force=True)
+    monkeypatch.setattr(miner_module.json, "dump", real_dump)
+
+    # The previous dossier must survive intact and still parse
+    assert dossier_json.read_text(encoding="utf-8") == before
+    assert json.loads(before)["session_id"] == session_id
+
+
+def test_successful_dossier_write_leaves_no_temp_file(tmp_path):
+    tmp_root = tmp_path / "tmp_claude"
+    claude_projects = tmp_path / "projects"
+    memories_root = tmp_path / "memories"
+    slug = "-home-andrew-AI-claudalizer"
+    session_id = "clean-write-session-uuid"
+    scratch = _make_mineable_session(tmp_root, claude_projects, slug, session_id)
+
+    miner = SessionMiner(tmp_root=tmp_root, claude_projects=claude_projects,
+                         memories_root=memories_root, lock_file=tmp_path / "miner.lock")
+    assert miner._mine_session(slug, None, session_id, scratch, force=True) is not None
+
+    session_out = memories_root / slug / session_id
+    assert json.loads((session_out / "dossier.json").read_text(encoding="utf-8"))["session_id"] == session_id
+    assert not list(session_out.glob("*.tmp"))
 
 
 def test_distiller_offline(tmp_path):
