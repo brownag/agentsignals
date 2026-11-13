@@ -264,12 +264,20 @@ def test_directives_none_detected_when_errors_match_no_pattern():
     assert "Maintain strict idempotency" not in directives
 
 
-@pytest.mark.xfail(strict=True, reason="G20: claudalizer test-run scratch excluded from blind-alleys")
 def test_test_runner_scratch_excluded_from_blind_alleys():
     dossier = _dossier(scratchpad_files=["g3-accept/lock", "rewrite-check/projects/x.jsonl"])
     block = synthesize_offline_memory_block(dossier)
     blind = _section(block, "### 2. Blind Alleys & Discarded Spikes")
     assert "No ephemeral scratchpads recorded." in blind
+
+
+def test_scratch_outside_test_runs_is_kept():
+    dossier = _dossier(scratchpad_files=["planning-backup/notes.md", "g3-accept/lock", "docs/g3-accept-notes.md"])
+    block = synthesize_offline_memory_block(dossier)
+    blind = _section(block, "### 2. Blind Alleys & Discarded Spikes")
+    assert "planning-backup/notes.md" in blind
+    assert "docs/g3-accept-notes.md" in blind
+    assert "g3-accept/lock" not in blind
 
 
 @pytest.mark.xfail(strict=True, reason="G21: friction lines show the real error text")

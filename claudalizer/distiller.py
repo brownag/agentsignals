@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MEMORIES_ROOT = Path.home() / ".claude-mined-memories"
 
+# Scratch folders created by the claudalizer's own test runs. Excluded from blind-alleys (G20).
+TEST_RUN_SCRATCH_ROOTS = ("g3-accept", "rewrite-check")
+
 DISTILLATION_SYSTEM_PROMPT = """You are a software engineering memory synthesizer.
 Your task is to analyze raw debugging sessions, tool friction, command failures, discarded spikes, and scratchpad scripts from an AI coding agent.
 Synthesize actionable, durable memory rules formatted for future agent sessions.
@@ -156,8 +159,9 @@ def synthesize_offline_memory_block(dossier_data: Dict[str, Any]) -> str:
         lines.append("- None detected.")
 
     lines.extend(["", "### 2. Blind Alleys & Discarded Spikes"])
-    if scratchpads:
-        for s in scratchpads:
+    kept_scratch = [s for s in scratchpads if s.split("/", 1)[0] not in TEST_RUN_SCRATCH_ROOTS]
+    if kept_scratch:
+        for s in kept_scratch:
             lines.append(f"- Ephemeral scratchpad tested: `{s}`")
     else:
         lines.append("- No ephemeral scratchpads recorded.")
