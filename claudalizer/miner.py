@@ -44,6 +44,7 @@ class SessionDossier:
     user_prompts: List[str] = field(default_factory=list)
     tool_errors: List[Dict[str, Any]] = field(default_factory=list)
     scratchpad_files: List[str] = field(default_factory=list)
+    skipped_files: List[Dict[str, Any]] = field(default_factory=list)
     stats: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -419,10 +420,10 @@ class SessionMiner:
 
         # Snapshot scratchpad files
         dest_scratchpad = dossier_dir / "scratchpad"
-        copied_files, _ = snapshot_scratchpad(scratchpad_dir, dest_scratchpad)
+        copied_files, skipped_files = snapshot_scratchpad(scratchpad_dir, dest_scratchpad)
 
-        # If nothing behavioral was found (no prompts, no errors, no scratchpad), skip empty dossier
-        if not user_prompts and not tool_errors and not copied_files:
+        # If nothing behavioral was found (no prompts, no errors, no scratchpad or skipped files), skip empty dossier
+        if not user_prompts and not tool_errors and not copied_files and not skipped_files:
             return None
 
         dossier = SessionDossier(
@@ -434,10 +435,12 @@ class SessionMiner:
             user_prompts=user_prompts,
             tool_errors=[asdict(e) for e in tool_errors],
             scratchpad_files=copied_files,
+            skipped_files=skipped_files,
             stats={
                 "prompt_count": len(user_prompts),
                 "error_count": len(tool_errors),
                 "scratchpad_count": len(copied_files),
+                "skipped_count": len(skipped_files),
             },
         )
 

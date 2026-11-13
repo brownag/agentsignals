@@ -414,3 +414,31 @@ def test_ipc_waybar_status(tmp_path):
     data = json.loads(status_file.read_text(encoding="utf-8"))
     assert data["alt"] == "extracted"
     assert data["count"] == 1
+
+
+def test_session_with_only_skipped_file_gets_dossier(tmp_path):
+    tmp_root = tmp_path / "tmp_claude"
+    memories_root = tmp_path / "memories"
+    slug = "-home-andrew-AI-claudalizer"
+    session_id = "skipped-only-session"
+
+    scratchpad_dir = tmp_root / slug / session_id / "scratchpad"
+    scratchpad_dir.mkdir(parents=True)
+    (scratchpad_dir / "big.txt").write_bytes(b"a" * (miner_module.MAX_SCRATCHPAD_FILE_BYTES + 1))
+
+    miner = SessionMiner(
+        tmp_root=tmp_root,
+        claude_projects=tmp_path / "projects",
+        memories_root=memories_root,
+        lock_file=tmp_path / "miner.lock",
+    )
+    dossiers = miner.scan_and_mine(debounce=False)
+    assert len(dossiers) == 1
+
+    dossier_json = memories_root / slug / session_id / "dossier.json"
+    assert dossier_json.exists()
+    for data in (dossiers[0].to_dict(), json.loads(dossier_json.read_text(encoding="utf-8"))):
+        assert len(data["skipped_files"]) == 1
+        assert data["skipped_files"][0]["reason"] == "oversized"
+        assert data["stats"]["skipped_count"] == 1
+        assert data["scratchpad_files"] == []
