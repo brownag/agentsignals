@@ -226,6 +226,31 @@ def test_snapshot_reports_skipped_files(tmp_path, monkeypatch):
     assert not (dest_dir / "locked.txt").exists()
 
 
+def test_filter_oversized_scratchpad(tmp_path):
+    src_dir = tmp_path / "scratchpad"
+    dest_dir = tmp_path / "mined"
+    src_dir.mkdir()
+    small_names = ["small.py", "small.sh", "small.log"]
+    for name in small_names:
+        (src_dir / name).write_text("ok\n", encoding="utf-8")
+    big_size = miner_module.MAX_SCRATCHPAD_FILE_BYTES + 1
+    (src_dir / "big.log").write_bytes(b"a" * big_size)
+    (src_dir / "blob.bin").write_bytes(b"\x00binary text")
+
+    copied, skipped = snapshot_scratchpad(src_dir, dest_dir)
+
+    assert sorted(copied) == sorted(small_names)
+    for name in small_names:
+        assert (dest_dir / name).exists()
+    assert not (dest_dir / "big.log").exists()
+    assert not (dest_dir / "blob.bin").exists()
+    assert len(skipped) == 2
+    by_path = {s["path"]: s for s in skipped}
+    assert by_path["big.log"]["reason"] == "oversized"
+    assert by_path["big.log"]["size_bytes"] == big_size
+    assert by_path["blob.bin"]["reason"] == "binary"
+
+
 def test_file_lock(tmp_path):
     lock_file = tmp_path / "test.lock"
     with file_lock(lock_file):
