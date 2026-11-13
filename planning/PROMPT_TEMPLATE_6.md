@@ -12,7 +12,7 @@ that reviews your plan before you may write code.
 ## Repo conventions
 - Read `AGENTS.md` first (Quick Start, Workflows, Never list).
 - Targeted test command: {{targeted test command}}
-- Full test command: `make test` (expect 48 passed, 4 xfailed before T6.1.1; 52 passed, 3 xfailed after).
+- Full test command: `make test` (expect 48 passed, 4 xfailed before T6.1.1; 53 passed, 3 xfailed after).
 - Lint: `make lint` reports 12 pre-existing findings. Add none.
 - Commits follow `git-workflow-standards` and `conventional-commits`: subject line only, no trailers, no phase or wave numbers, no "Co-Authored-By".
 
@@ -49,7 +49,7 @@ Append to `planning/STATE_6.md` under `## {{id}}` (15 lines max): status; files 
 
 | Task | `{{wave}}` | `{{targeted test command}}` |
 | --- | --- | --- |
-| T6.1.1 | 1 | `python -m pytest tests/test_distiller.py -q -rx` (expect 12 passed, 3 xfailed), then `make test` |
+| T6.1.1 | 1 | `python -m pytest tests/test_distiller.py -q -rx` (expect 13 passed, 3 xfailed), then `make test` |
 | T6.2.1 | 2 | `grep` checks in the spec's Acceptance section, then `make test` |
 
 ## Escalation (from wave-orchestration)
