@@ -23,7 +23,7 @@ Last Updated: 2026-11-12
 | --- | --- | --- | --- | --- |
 | 1 | T1.1.1 Snapshot reports skipped files | done | 72d3ff6 | 15 targeted tests pass; lint 14 -> 12 (two unused test imports now used) |
 | 1 | T1.1.2 Spec and goal docs | done | 9d93cdf | acceptance greps pass (no 256 in SPEC, no L783 in GOALS, skipped_files present) |
-| 2 | T1.2.1 Skipped files in dossier | pending | — | depends on T1.1.1 |
+| 2 | T1.2.1 Skipped files in dossier | done | efa23c8 | `make check` passes (16 tests); lint still 12 pre-existing |
 
 Wave 2 starts only after wave 1 is all `done`.
 
