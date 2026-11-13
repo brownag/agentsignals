@@ -70,7 +70,7 @@ Claude Code encodes absolute paths by replacing slashes with dashes.
 > * **Retain (Behavioral Memory):**  
   * Tool invocations marked is\_error: true.  
   * Command strings executed via terminal tool with exit code \=0.  
-  * All files inside \<session\>/scratchpad/ (discarding binaries \>256 KB).  
+  * All files inside \<session\>/scratchpad/ (discarding binaries \>250 KiB).  
   * User prompts longer than 15 characters, preserving core intent and framing.  
   * LLM self-correction sequences (e.g., failed tool invocation followed immediately by an adjusted parameter call).
 
@@ -88,6 +88,7 @@ The miner must write atomic JSON output to:
   `"mined_at": "2026-11-12T16:53:00Z",`  
   `"workflow_metrics": {`  
     `"scratchpad_artifact_count": 2,`  
+    `"skipped_count": 1,`  
     `"tool_calls_total": 14,`  
     `"tool_failures_total": 3`  
   `},`  
@@ -107,8 +108,17 @@ The miner must write atomic JSON output to:
       `"byte_size": 412,`  
       `"archived_path": "scratchpad_archive/repro.py"`  
     `}`  
+  `],`  
+  `"skipped_files": [`  
+    `{`  
+      `"path": "dumps/big.bin",`  
+      `"size_bytes": 1234567,`  
+      `"reason": "oversized"`  
+    `}`  
   `]`  
 `}`
+
+Skipped files are not copied; each is listed in `skipped_files` with its reason (`oversized`, `binary`, or `unreadable`).
 
 ### **3.2 distiller.py: Prompt Synthesis & OpenAI-Compatible Engine**
 
@@ -184,7 +194,7 @@ Review criteria will reject any PR without automated testing covering edge-case 
 ### **4.1 Ingestion & Mining (test\_miner.py)**
 
 > * **test\_slug\_decoding**: Test paths including multiple dashes, nested subdirectories, and trailing dashes (e.g., \-home-user-work-src-my-pkg).  
-> * **test\_filter\_oversized\_scratchpad**: Verify files \>256 KB are skipped while smaller .py, .sh, and .log files are archived.  
+> * **test\_filter\_oversized\_scratchpad**: Verify files over 250 KiB and binary files are not copied, each is listed in `skipped_files` with its reason, and smaller .py, .sh, and .log files are archived.  
 > * **test\_jsonl\_corrupt\_recovery**: Feed a transcript containing half-written lines, truncated JSON, and non-UTF-8 characters. Verify extraction continues without raising unhandled exceptions.  
 > * **test\_git\_state\_filtering**: Ensure clean exit codes and standard tool executions do not leak into tool\_failures.
 
@@ -345,17 +355,17 @@ Response: Here are the complete test fixtures and test cases for tests/conftest.
         `assert decoded.startswith("/")`
 
 `class TestScratchpadArtifactMining:`  
-    `"""Tests file discovery, size filtering (>256KB), and snapshot mechanics."""`
+    `"""Tests file discovery, size filtering (>250KiB), and snapshot mechanics."""`
 
     `def test_filter_oversized_scratchpad(self, mock_env, create_session_workspace):`  
         `workspace = create_session_workspace(`  
             `scratchpad_files={`  
                 `"small_script.py": "print('debugging GDAL bindings')\n",`  
                 `"nested/repro.sh": "#!/usr/bin/env bash\nset -e\ng++ -shared ...\n",`  
-                `# File exactly 256 KB + 100 bytes (must be filtered out)`  
-                `"oversized.dump": b"A" * (256 * 1024 + 100),`  
-                `# File just under 256 KB (must be retained)`  
-                `"boundary.log": b"B" * (256 * 1024 - 100),`  
+                `# File exactly 250 KiB + 100 bytes (must be filtered out)`  
+                `"oversized.dump": b"A" * (250 * 1024 + 100),`  
+                `# File just under 250 KiB (must be retained)`  
+                `"boundary.log": b"B" * (250 * 1024 - 100),`  
             `}`  
         `)`
 

@@ -9,13 +9,13 @@ Intent: durable indexing of Claude session history from volatile `/tmp/claude-10
 
 - **[G1]** Every session scratchpad file is in `~/.claude-mined-memories` before `/tmp/claude-1000` is deleted, with no silent drops.
   - Why now: unblocks G7 and G9, and it is the core durability goal. Its only open prerequisite (G8) is now decided.
-  - Exit criteria: files over the 250 KiB cap are recorded as stubs (name, size, reason) rather than dropped; the SPEC.md L783-786 tests for G1 exist and pass; `make check` passes.
+  - Exit criteria: files over the 250 KiB cap are recorded as stubs (name, size, reason) rather than dropped; the SPEC.md §4.1 and §3.1 tests for G1 exist and pass; `make check` passes.
   - Size policy (decided): 250 KiB, the existing `MAX_SCRATCHPAD_FILE_BYTES`. Keep it no larger than necessary. Treat it as a default, not a hard rule, so it can be lowered or raised later without a redesign.
-  - First action: read `planning/SPEC.md` L783-786 and the scratchpad snapshot code in `claudalizer/miner.py`, then write the failing test for an oversized-file stub in `tests/test_miner.py`.
+  - First action: read `planning/SPEC.md` §4.1 and §3.1 and the scratchpad snapshot code in `claudalizer/miner.py`, then write the failing test for an oversized-file stub in `tests/test_miner.py`.
 
 ## Sequenced Goals (Dependency DAG)
 
-- **[G9]** The four spec tests (SPEC.md L783-786) exist and pass for G1 and G2.
+- **[G9]** The four spec tests (SPEC.md §4.1) exist and pass for G1 and G2.
   - Depends on: G1, G2 (G2 done)
 - **[G7]** Failed tool results are kept in the index, and the noise filter matches the README.
   - Depends on: G1
