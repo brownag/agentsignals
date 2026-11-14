@@ -109,7 +109,7 @@ Add a custom module in `~/.config/waybar/config`:
 
 Claudalizer sends `pkill -RTMIN+8 waybar` after each status write, so the module refreshes immediately. Polling every `interval` seconds remains the fallback.
 
-The module text shows the latest scan's mined and active session counts. Its tooltip shows the scan timestamp, those counts, cumulative scans and sessions mined, and retained recent scans. Active sessions are those skipped because they were still changing.
+The module text shows the latest mined count, adding the active count only when there are active sessions; when nothing was mined and no sessions are active, it shows only the brain icon. Hover for the latest scan time and counts, the last project (when available), and cumulative totals. The tooltip ends with up to three recent scans that mined sessions; empty scans are omitted. Active sessions are those skipped because they were still changing.
 
 Scan state is stored separately from the temporary Waybar payload in `<memories-root>/scan_status.json` (by default `~/.claude-mined-memories/scan_status.json`). It is atomically written after each completed scan, including scans that mine nothing, and is available across process restarts. Missing or corrupt state starts fresh; if writing fails, mining can continue without persistence. Compositor hooks refresh Waybar without creating an additional desktop popup.
 

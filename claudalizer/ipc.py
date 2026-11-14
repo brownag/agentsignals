@@ -159,20 +159,29 @@ def emit_waybar_signal(
     }
     if scan_state and scan_state.get("latest"):
         latest = scan_state["latest"]
-        payload["text"] = f"🧠 {latest['mined']} | active {latest['active']}"
+        mined = latest["mined"]
+        active = latest["active"]
+        payload["text"] = f"🧠 {mined}" if mined else "🧠"
+        if active:
+            payload["text"] += f" | active {active}"
         lines = [
             f"Last scan: {latest['timestamp']}",
-            f"Mined: {latest['mined']} | Active: {latest['active']}",
-            f"Total scans: {scan_state['total_scans']} | Total mined: {scan_state['total_mined']}",
+            f"Mined: {mined} | Active: {active}",
         ]
-        if latest.get("summary"):
-            lines.append(latest["summary"])
-        if scan_state["history"]:
-            lines.append("Recent scans:")
+        summary = latest.get("summary", "").removeprefix("Last project: ")
+        if summary:
+            lines.append(f"Last project: {summary}")
+        lines.append(
+            f"Total scans: {scan_state['total_scans']} | Total mined: {scan_state['total_mined']}",
+        )
+        history = [scan for scan in scan_state["history"] if scan["mined"] > 0][-3:]
+        if history:
+            lines.append("Recent mined scans:")
             lines.extend(
-                f"{s['timestamp']}: mined {s['mined']}, active {s['active']}"
-                + (f" — {s['summary']}" if s.get("summary") else "")
-                for s in scan_state["history"]
+                f"{scan['timestamp']}: {scan['mined']} mined"
+                + (f", {scan['active']} active" if scan["active"] else "")
+                + (f" — {scan['summary'].removeprefix('Last project: ')}" if scan.get("summary") else "")
+                for scan in reversed(history)
             )
         payload["tooltip"] = "\n".join(lines)
         payload["count"] = latest["mined"]

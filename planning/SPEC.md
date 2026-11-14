@@ -167,7 +167,7 @@ Each completed scan records its UTC timestamp, mined count, active count (sessio
 
 `scan` and `watch` accept a non-negative `--history-limit`, default 50. A limit of 0 clears individual history records but retains the latest scan and cumulative totals. Every completed scan updates state, even when no sessions are mined.
 
-The separate Waybar payload at `/tmp/claudalizer_status.json` shows the latest mined and active counts in its text; its tooltip shows the timestamp, counts, cumulative totals, and retained recent history. After a status write, `pkill -RTMIN+8 waybar` requests a refresh; configured polling remains a fallback.
+The separate Waybar payload at `/tmp/claudalizer_status.json` shows the latest mined count in its text, adding the active count only when nonzero; if both counts are zero, the text is only the brain icon. Its tooltip shows the latest timestamp and counts, last project when available, cumulative totals, and at most the three most recent history entries with mined sessions. Empty scans are omitted from that list. After a status write, `pkill -RTMIN+8 waybar` requests a refresh; configured polling remains a fallback.
 
 #### **Compositor Hooks & Notifications**
 

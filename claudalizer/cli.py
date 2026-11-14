@@ -37,7 +37,7 @@ def _write_mined_status(args, miner, dossiers):
     """Record and display the result of a completed scan."""
     state = record_scan(
         Path(args.memories_root), len(dossiers), len(miner.skipped.get("active", [])),
-        summary=f"Last project: {dossiers[-1].slug}" if dossiers else "",
+        summary=dossiers[-1].slug if dossiers else "",
         history_limit=args.history_limit,
     )
     emit_waybar_signal(status="extracted" if dossiers else "idle", scan_state=state)

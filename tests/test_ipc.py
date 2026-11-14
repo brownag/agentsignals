@@ -172,12 +172,46 @@ def test_scan_state_and_waybar_are_atomic_and_independent(monkeypatch, tmp_path)
     payload = json.loads(status.read_text(encoding="utf-8"))
     assert "2" in payload["text"] and "3" in payload["text"]
     assert state["latest"]["timestamp"] in payload["tooltip"]
-    assert "Total scans: 1" in payload["tooltip"]
-    assert "Total mined: 2" in payload["tooltip"]
-    assert "Recent scans:" in payload["tooltip"] and "project" in payload["tooltip"]
+    assert "Last project: project" in payload["tooltip"]
+    assert "Total scans: 1 | Total mined: 2" in payload["tooltip"]
+    assert "Recent mined scans:" in payload["tooltip"] and "project" in payload["tooltip"]
     assert ipc.load_scan_state(root) == state
     assert [target for _, target in replacements] == [root / ipc.SCAN_STATE_FILENAME, status]
     assert all(not source.exists() for source, _ in replacements)
+
+
+@pytest.mark.parametrize(
+    "active, expected_text",
+    [(0, "🧠"), (2, "🧠 | active 2")],
+)
+def test_zero_mined_scan_has_compact_waybar_text(tmp_path, active, expected_text):
+    state = ipc.record_scan(tmp_path, 0, active)
+    status_file = tmp_path / "waybar.json"
+
+    ipc.emit_waybar_signal(status_file=status_file, scan_state=state)
+
+    payload = json.loads(status_file.read_text(encoding="utf-8"))
+    assert payload["text"] == expected_text
+
+
+def test_waybar_tooltip_orders_latest_project_before_totals_and_limits_useful_history(tmp_path):
+    state = ipc.record_scan(tmp_path, 0, 0)
+    state["latest"].update(timestamp="current", summary="current-project")
+    state["history"] = [
+        {"timestamp": f"scan-{i}", "mined": 1 if i % 2 else 0, "active": 0, "summary": f"project-{i}"}
+        for i in range(10)
+    ]
+    status_file = tmp_path / "waybar.json"
+
+    ipc.emit_waybar_signal(status_file=status_file, scan_state=state)
+
+    tooltip = json.loads(status_file.read_text(encoding="utf-8"))["tooltip"]
+    assert tooltip.index("Last project: current-project") < tooltip.index("Total scans:")
+    history_lines = [line for line in tooltip.splitlines() if line.startswith("scan-")]
+    assert len(history_lines) == 3
+    assert all("0 mined" not in line for line in history_lines)
+    assert [line.split(":", 1)[0] for line in history_lines] == ["scan-9", "scan-7", "scan-5"]
+    assert "scan-8" not in tooltip and "scan-6" not in tooltip and "scan-4" not in tooltip
 
 
 def test_scan_write_failure_preserves_previous_state(monkeypatch, tmp_path):
