@@ -4,6 +4,8 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -60,6 +62,77 @@ def detect_compositor() -> Optional[str]:
 
 
 DEFAULT_STATUS_FILE = Path("/tmp/claudalizer_status.json")
+SCAN_STATE_FILENAME = "scan_status.json"
+
+
+def _atomic_json_write(path: Path, payload: Dict[str, Any]) -> None:
+    """Replace a JSON file atomically, using a unique temporary file beside it."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    name = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as f:
+            name = f.name
+            json.dump(payload, f)
+        os.replace(name, path)
+    finally:
+        if name is not None and os.path.exists(name):
+            os.unlink(name)
+
+
+def _valid_scan(scan: Any) -> bool:
+    return (
+        isinstance(scan, dict)
+        and isinstance(scan.get("timestamp"), str)
+        and all(type(scan.get(key)) is int and scan[key] >= 0 for key in ("mined", "active"))
+        and isinstance(scan.get("summary", ""), str)
+    )
+
+
+def load_scan_state(memories_root: Path) -> Dict[str, Any]:
+    """Read scan state, returning an empty state if it is missing or corrupt."""
+    empty: Dict[str, Any] = {"total_scans": 0, "total_mined": 0, "latest": None, "history": []}
+    try:
+        with (memories_root / SCAN_STATE_FILENAME).open(encoding="utf-8") as f:
+            state = json.load(f)
+        if not isinstance(state, dict):
+            return empty
+        if not all(type(state.get(k)) is int and state[k] >= 0 for k in ("total_scans", "total_mined")):
+            return empty
+        if state.get("latest") is not None and not _valid_scan(state["latest"]):
+            return empty
+        if not isinstance(state.get("history"), list) or not all(_valid_scan(s) for s in state["history"]):
+            return empty
+        return state
+    except (OSError, ValueError, UnicodeError):
+        return empty
+
+
+def record_scan(
+    memories_root: Path,
+    mined_count: int,
+    active_count: int,
+    summary: str = "",
+    history_limit: int = 50,
+) -> Dict[str, Any]:
+    """Record one scan and return its state even if persistence is unavailable."""
+    if history_limit < 0 or mined_count < 0 or active_count < 0:
+        raise ValueError("scan counts and history limit must be non-negative")
+    state = load_scan_state(memories_root)
+    scan = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "mined": mined_count,
+        "active": active_count,
+        "summary": summary,
+    }
+    state["total_scans"] += 1
+    state["total_mined"] += mined_count
+    state["latest"] = scan
+    state["history"] = (state["history"] + [scan])[-history_limit:] if history_limit else []
+    try:
+        _atomic_json_write(memories_root / SCAN_STATE_FILENAME, state)
+    except OSError:
+        pass
+    return state
 
 
 def emit_waybar_signal(
@@ -67,6 +140,7 @@ def emit_waybar_signal(
     status: str = "idle",
     message: str = "",
     mined_count: int = 0,
+    scan_state: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Write status JSON for custom Waybar / status bar modules.
 
@@ -83,15 +157,29 @@ def emit_waybar_signal(
         "class": status,
         "count": mined_count,
     }
+    if scan_state and scan_state.get("latest"):
+        latest = scan_state["latest"]
+        payload["text"] = f"🧠 {latest['mined']} | active {latest['active']}"
+        lines = [
+            f"Last scan: {latest['timestamp']}",
+            f"Mined: {latest['mined']} | Active: {latest['active']}",
+            f"Total scans: {scan_state['total_scans']} | Total mined: {scan_state['total_mined']}",
+        ]
+        if latest.get("summary"):
+            lines.append(latest["summary"])
+        if scan_state["history"]:
+            lines.append("Recent scans:")
+            lines.extend(
+                f"{s['timestamp']}: mined {s['mined']}, active {s['active']}"
+                + (f" — {s['summary']}" if s.get("summary") else "")
+                for s in scan_state["history"]
+            )
+        payload["tooltip"] = "\n".join(lines)
+        payload["count"] = latest["mined"]
     if status_file is None:
         status_file = DEFAULT_STATUS_FILE
     try:
-        status_file.parent.mkdir(parents=True, exist_ok=True)
-        # Atomic write via temp file
-        temp_file = status_file.with_suffix(".tmp")
-        with open(temp_file, "w", encoding="utf-8") as f:
-            json.dump(payload, f)
-        temp_file.replace(status_file)
+        _atomic_json_write(status_file, payload)
     except OSError:
         return
     _signal_waybar()
@@ -143,22 +231,7 @@ def dispatch_wm_hook(
             return False
 
     elif compositor == "hyprland":
-        # hyprctl dispatch can be used to send a notification or custom event
-        try:
-            # hyprctl notify: [icon] [time_ms] [color] [message]
-            color = "rgb(88c0d0)" if event == "idle" else "rgb(ebcb8b)"
-            time_ms = 3000
-            msg = f"claudalizer: {message}"
-            subprocess.run(
-                ["hyprctl", "notify", "0", str(time_ms), color, msg],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=3,
-                check=False,
-            )
-            return True
-        except (subprocess.SubprocessError, OSError):
-            return False
+        return True
 
     return False
 

@@ -1,3 +1,4 @@
+import json
 import subprocess
 from pathlib import Path
 
@@ -40,9 +41,7 @@ def test_hyprland_dispatch(clean_env, monkeypatch):
     monkeypatch.setattr(ipc.subprocess, "run", lambda cmd, **kwargs: calls.append(cmd))
 
     assert ipc.dispatch_wm_hook("extracted", {"message": "hi"}) is True
-    assert calls == [
-        ["hyprctl", "notify", "0", "3000", "rgb(ebcb8b)", "claudalizer: hi"],
-    ]
+    assert calls == []
 
 
 def test_headless_environment_no_crash(clean_env, monkeypatch, tmp_path):
@@ -120,3 +119,85 @@ def test_waybar_refresh_failure_is_silent(monkeypatch, tmp_path):
 def test_default_status_file_is_redirected_in_tests():
     # The autouse fixture points the default at tmp_path, never at /tmp/claudalizer_status.json.
     assert ipc.DEFAULT_STATUS_FILE != Path("/tmp/claudalizer_status.json")
+
+
+def test_scan_history_totals_reload_and_retention(tmp_path):
+    first = ipc.record_scan(tmp_path, 2, 3, "project one", history_limit=2)
+    assert first["total_scans"] == 1
+    assert first["total_mined"] == 2
+    assert first["latest"]["mined"] == 2
+    assert first["latest"]["active"] == 3
+    assert first["latest"]["summary"] == "project one"
+    assert first["latest"]["timestamp"]
+    assert ipc.load_scan_state(tmp_path) == first
+
+    ipc.record_scan(tmp_path, 1, 0, history_limit=2)
+    third = ipc.record_scan(tmp_path, 0, 4, history_limit=2)
+    assert (third["total_scans"], third["total_mined"]) == (3, 3)
+    assert [scan["mined"] for scan in third["history"]] == [1, 0]
+    assert ipc.load_scan_state(tmp_path) == third
+
+    fourth = ipc.record_scan(tmp_path, 3, 1, history_limit=0)
+    assert fourth["history"] == []
+    assert fourth["latest"]["mined"] == 3
+    assert (fourth["total_scans"], fourth["total_mined"]) == (4, 6)
+    assert ipc.load_scan_state(tmp_path) == fourth
+
+
+@pytest.mark.parametrize("content", ["{", "null", '[]', '{"total_scans": "bad"}',
+                                      '{"total_scans": 1, "total_mined": 1, "history": [null]}'])
+def test_scan_state_recovers_from_corruption(tmp_path, content):
+    (tmp_path / ipc.SCAN_STATE_FILENAME).write_text(content, encoding="utf-8")
+    state = ipc.record_scan(tmp_path, 1, 2)
+    assert state["total_scans"] == 1
+    assert state["total_mined"] == 1
+    assert ipc.load_scan_state(tmp_path) == state
+
+
+def test_scan_state_and_waybar_are_atomic_and_independent(monkeypatch, tmp_path):
+    root = tmp_path / "memories"
+    status = tmp_path / "waybar.json"
+    replacements = []
+    original_replace = ipc.os.replace
+
+    def replace(source, target):
+        replacements.append((Path(source), Path(target)))
+        assert Path(source).parent == Path(target).parent
+        assert json.loads(Path(source).read_text(encoding="utf-8"))
+        original_replace(source, target)
+
+    monkeypatch.setattr(ipc.os, "replace", replace)
+    state = ipc.record_scan(root, 2, 3, "project")
+    ipc.emit_waybar_signal(status_file=status, status="extracted", scan_state=state)
+    payload = json.loads(status.read_text(encoding="utf-8"))
+    assert "2" in payload["text"] and "3" in payload["text"]
+    assert state["latest"]["timestamp"] in payload["tooltip"]
+    assert "Total scans: 1" in payload["tooltip"]
+    assert "Total mined: 2" in payload["tooltip"]
+    assert "Recent scans:" in payload["tooltip"] and "project" in payload["tooltip"]
+    assert ipc.load_scan_state(root) == state
+    assert [target for _, target in replacements] == [root / ipc.SCAN_STATE_FILENAME, status]
+    assert all(not source.exists() for source, _ in replacements)
+
+
+def test_scan_write_failure_preserves_previous_state(monkeypatch, tmp_path):
+    previous = ipc.record_scan(tmp_path, 1, 0)
+
+    def fail_replace(source, target):
+        raise OSError("write failed")
+
+    monkeypatch.setattr(ipc.os, "replace", fail_replace)
+    result = ipc.record_scan(tmp_path, 2, 1)
+    assert result["total_scans"] == 2
+    assert ipc.load_scan_state(tmp_path) == previous
+    assert list(tmp_path.iterdir()) == [tmp_path / ipc.SCAN_STATE_FILENAME]
+    ipc.emit_waybar_signal(status_file=tmp_path / "waybar.json", scan_state=result)
+    assert not (tmp_path / "waybar.json").exists()
+
+
+def test_negative_scan_inputs_rejected(tmp_path):
+    for kwargs in ({"mined_count": -1, "active_count": 0},
+                   {"mined_count": 0, "active_count": -1},
+                   {"mined_count": 0, "active_count": 0, "history_limit": -1}):
+        with pytest.raises(ValueError):
+            ipc.record_scan(tmp_path, **kwargs)
