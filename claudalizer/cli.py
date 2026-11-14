@@ -6,12 +6,11 @@ import os
 import shutil
 import sys
 import time
-from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
 
 from claudalizer.distiller import MemoryDistiller
-from claudalizer.ipc import dispatch_wm_hook, emit_waybar_signal, notify_extraction, send_notification
+from claudalizer.ipc import dispatch_wm_hook, emit_waybar_signal, record_scan, send_notification
 from claudalizer.waybar_config import find_waybar_config, manual_snippet, patch_waybar_config
 from claudalizer.miner import (
     DEFAULT_CLAUDE_PROJECTS,
@@ -34,15 +33,27 @@ def setup_logging(verbose: bool = False) -> None:
     )
 
 
-def _write_mined_status(dossiers) -> None:
-    """Show the mined result, then settle back to idle so the status never sticks."""
-    now = datetime.now().strftime("%H:%M")
-    if not dossiers:
-        emit_waybar_signal(status="idle", message="No new sessions", mined_count=0)
-        return
-    slug = dossiers[-1].slug
-    emit_waybar_signal(status="extracted", message=f"Mined {slug} at {now}", mined_count=len(dossiers))
-    emit_waybar_signal(status="idle", message=f"Last mined {slug} at {now}", mined_count=0)
+def _write_mined_status(args, miner, dossiers):
+    """Record and display the result of a completed scan."""
+    state = record_scan(
+        Path(args.memories_root), len(dossiers), len(miner.skipped.get("active", [])),
+        summary=f"Last project: {dossiers[-1].slug}" if dossiers else "",
+        history_limit=args.history_limit,
+    )
+    emit_waybar_signal(status="extracted" if dossiers else "idle", scan_state=state)
+    return state
+
+
+def _notify_batch(dossiers) -> None:
+    if dossiers:
+        send_notification("Claudalizer", f"Mined {len(dossiers)} session(s).")
+
+
+def _non_negative_int(value: str) -> int:
+    number = int(value)
+    if number < 0:
+        raise argparse.ArgumentTypeError("must be non-negative")
+    return number
 
 
 def resolve_llm_settings(args: argparse.Namespace) -> Tuple[Optional[str], str]:
@@ -85,14 +96,14 @@ def handle_scan(args: argparse.Namespace) -> int:
         force=args.force,
         target_slug=args.project,
     )
+    _write_mined_status(args, miner, dossiers)
 
     logger.info(f"Scan complete. Mined {len(dossiers)} session(s).")
     for d in dossiers:
         print(f"• Mined {d.slug}/{d.session_id} -> {len(d.tool_errors)} error(s), {len(d.scratchpad_files)} scratchpad file(s)")
-        if args.notify:
-            notify_extraction(d.slug, d.session_id, len(d.scratchpad_files), len(d.tool_errors))
+    if args.notify:
+        _notify_batch(dossiers)
     print(format_skip_summary(miner.skipped))
-    _write_mined_status(dossiers)
 
     if args.auto_distill and dossiers:
         logger.info("Running automatic distillation on mined sessions...")
@@ -140,15 +151,17 @@ def handle_watch(args: argparse.Namespace) -> int:
     )
     distiller = MemoryDistiller(memories_root=Path(args.memories_root)) if args.auto_distill else None
 
+    latest_state = None
     try:
         while True:
             try:
                 dossiers = miner.scan_and_mine(debounce=True, force=False, target_slug=args.project)
+                latest_state = _write_mined_status(args, miner, dossiers)
                 if dossiers:
+                    if args.notify:
+                        _notify_batch(dossiers)
                     for d in dossiers:
                         logger.info(f"Mined {d.slug}/{d.session_id} ({len(d.tool_errors)} errors, {len(d.scratchpad_files)} files)")
-                        if args.notify:
-                            notify_extraction(d.slug, d.session_id, len(d.scratchpad_files), len(d.tool_errors))
                         if distiller:
                             distiller.distill_session(
                                 d.slug,
@@ -156,7 +169,6 @@ def handle_watch(args: argparse.Namespace) -> int:
                                 llm_endpoint=resolve_llm_settings(args)[0],
                                 llm_model=resolve_llm_settings(args)[1],
                             )
-                    _write_mined_status(dossiers)
             except Exception as e:
                 logger.error(f"Error in watch cycle: {e}")
 
@@ -164,6 +176,8 @@ def handle_watch(args: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         logger.info("Watch stopped by user.")
         dispatch_wm_hook("idle", {"message": "Idle"})
+        if latest_state is not None:
+            emit_waybar_signal(scan_state=latest_state)
         return 0
 
 
@@ -258,7 +272,8 @@ def build_parser() -> argparse.ArgumentParser:
     scan_p.add_argument("--project", help="Filter by specific project slug")
     scan_p.add_argument("--force", action="store_true", help="Force re-extraction of already mined sessions")
     scan_p.add_argument("--no-debounce", action="store_true", help="Skip file-settle debouncing check")
-    scan_p.add_argument("--notify", action="store_true", help="Send desktop notification and WM IPC hook")
+    scan_p.add_argument("--notify", action="store_true", help="Send a desktop notification when sessions are mined")
+    scan_p.add_argument("--history-limit", type=_non_negative_int, default=50, help="Recent scans to retain (0 disables history)")
     scan_p.add_argument("--auto-distill", action="store_true", help="Automatically distill memory blocks after mining")
     scan_p.add_argument("--llm-endpoint", help="OpenAI-compatible LLM endpoint (e.g. http://localhost:11434/v1/chat/completions)")
     scan_p.add_argument("--llm-model", default="llama3", help="LLM model name for distillation")
@@ -274,7 +289,8 @@ def build_parser() -> argparse.ArgumentParser:
     watch_p = subparsers.add_parser("watch", help="Continuous monitoring loop with file debouncing")
     watch_p.add_argument("--interval", type=float, default=3.0, help="Polling interval in seconds")
     watch_p.add_argument("--project", help="Filter by specific project slug")
-    watch_p.add_argument("--notify", action="store_true", default=True, help="Send notifications upon mining")
+    watch_p.add_argument("--notify", action="store_true", help="Send notifications upon mining")
+    watch_p.add_argument("--history-limit", type=_non_negative_int, default=50, help="Recent scans to retain (0 disables history)")
     watch_p.add_argument("--auto-distill", action="store_true", default=True, help="Auto distill mined sessions")
     watch_p.add_argument("--llm-endpoint", help="OpenAI-compatible LLM endpoint")
     watch_p.add_argument("--llm-model", default="llama3", help="LLM model name for distillation")

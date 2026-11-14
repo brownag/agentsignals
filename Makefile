@@ -46,7 +46,7 @@ distill: ## Distill unparsed dossiers into memory blocks
 	claudalizer distill
 
 watch: ## Run claudalizer continuous watch daemon (WATCH_INTERVAL, default 3.0 s)
-	claudalizer watch --interval $(WATCH_INTERVAL) --notify --auto-distill
+	claudalizer watch --interval $(WATCH_INTERVAL) --auto-distill
 
 systemd-dry-run: ## Preview systemd unit installation
 	claudalizer install-systemd --dry-run

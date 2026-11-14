@@ -4,7 +4,7 @@ Documentation=https://github.com/example/claudalizer
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/claudalizer watch --notify
+ExecStart=%h/.local/bin/claudalizer watch
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
