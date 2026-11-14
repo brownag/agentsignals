@@ -506,7 +506,7 @@ def test_cli_dry_run(capsys):
     assert ret == 0
     captured = capsys.readouterr().out
     assert "claudalizer.service" in captured
-    assert "claudalizer.path" in captured
+    assert "claudalizer.path" not in captured
     assert "claudalizer.conf" in captured
 
 

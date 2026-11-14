@@ -5,7 +5,9 @@ PIP    ?= pip
 WATCH_INTERVAL ?= 3.0
 
 SYSTEMD_USER_DIR := $(HOME)/.config/systemd/user
-SYSTEMD_UNITS    := claudalizer.path claudalizer-watch.service
+SYSTEMD_UNITS    := claudalizer-watch.service
+# Legacy path unit: removed from install; listed here only so uninstall cleans up old installs.
+LEGACY_UNITS     := claudalizer.path
 
 .PHONY: help install install-user test test-cov lint check clean build scan distill watch systemd-dry-run systemd-install systemd-status systemd-uninstall
 
@@ -49,16 +51,15 @@ watch: ## Run claudalizer continuous watch daemon (WATCH_INTERVAL, default 3.0 s
 systemd-dry-run: ## Preview systemd unit installation
 	claudalizer install-systemd --dry-run
 
-systemd-install: ## Install units, then enable the path trigger and the watch service
+systemd-install: ## Install units, then enable the watch service
 	claudalizer install-systemd
 	systemctl --user daemon-reload
-	systemctl --user enable --now claudalizer.path
 	systemctl --user enable --now claudalizer-watch.service
 
-systemd-status: ## Show status of the claudalizer path and watch units
+systemd-status: ## Show status of the claudalizer watch unit
 	@systemctl --user status $(SYSTEMD_UNITS) --no-pager || true
 
 systemd-uninstall: ## Disable and remove the claudalizer user units
-	-systemctl --user disable --now $(SYSTEMD_UNITS)
-	rm -f $(addprefix $(SYSTEMD_USER_DIR)/,$(SYSTEMD_UNITS) claudalizer.service)
+	-systemctl --user disable --now $(SYSTEMD_UNITS) $(LEGACY_UNITS)
+	rm -f $(addprefix $(SYSTEMD_USER_DIR)/,$(SYSTEMD_UNITS) $(LEGACY_UNITS) claudalizer.service)
 	systemctl --user daemon-reload
