@@ -27,6 +27,8 @@ claudalizer captures, isolates, and distills high-value behavioral metadata from
                  `▼`  
              `[ipc.py] ───────────► Sway IPC / Hyprland IPC / Waybar / notify-send`
 
+Completed scans also update persistent scan state under the configured memories root; Waybar reads a separate temporary status payload.
+
 ### **Core Non-Functional Constraints**
 
 > * **Zero Mandatory Third-Party Runtime Dependencies:** The core package must run on a pristine Python 3.10+ standard library (urllib.request, json, pathlib, subprocess, argparse, socket, fcntl). Test suites may use pytest.  
@@ -159,34 +161,28 @@ The block starts with `# Mined Behavioral Memory for <slug>`, then a `**Source D
 
 ### **3.3 ipc.py: Window Manager & Notification Integration**
 
-#### **Compositor Detection Logic**
+#### **Scan State & Waybar**
 
-The module must inspect environment variables in priority order:
+Each completed scan records its UTC timestamp, mined count, active count (sessions skipped as still changing), and optional project summary. State at `<memories-root>/scan_status.json` contains the latest scan, cumulative scan and mined-session totals, and bounded recent history. Its default location is `~/.claude-mined-memories/scan_status.json`. Atomic replacement preserves state across process restarts when writes succeed; missing or corrupt state starts empty, and a write failure does not stop mining.
 
-> 1. \$SWAYSOCK → **Sway**  
-> 2. \$HYPRLAND\_INSTANCE\_SIGNATURE → **Hyprland**  
-> 3. Fallback → Standard Desktop Notifications (notify-send)
+`scan` and `watch` accept a non-negative `--history-limit`, default 50. A limit of 0 clears individual history records but retains the latest scan and cumulative totals. Every completed scan updates state, even when no sessions are mined.
 
-#### **Execution Matrix**
+The separate Waybar payload at `/tmp/claudalizer_status.json` shows the latest mined and active counts in its text; its tooltip shows the timestamp, counts, cumulative totals, and retained recent history. After a status write, `pkill -RTMIN+8 waybar` requests a refresh; configured polling remains a fallback.
 
-| Target | Condition | Command Invocation | Expected Payload / Action |
-| :---- | :---- | :---- | :---- |
-| **Sway Border** | State \= mining | swaymsg '\[app\_id="claude.\*"\] border pixel 3, border color \#f38ba8' | Alerts user that session extraction is active. |
-| **Sway Border** | State \= idle | swaymsg '\[app\_id="claude.\*"\] border pixel 2, border color \#89b4fa' | Resets border to default accent. |
-| **Hyprland Border** | State \= mining | hyprctl dispatch setprop "activewindow" col.active\_border 0xfff38ba8 | Sets active window border color. |
-| **Waybar Signal** | Any state change | pkill \-RTMIN+8 waybar | Emits custom real-time signal to trigger Waybar module refresh. |
-| **Desktop Notice** | On mine complete | notify-send \-a "Claudalizer" \-i accessories-dictionary "Memory Stored" "Mined {slug} ({id})" | Standard FreeDesktop notification. |
+#### **Compositor Hooks & Notifications**
 
-All IPC calls must set stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL and catch FileNotFoundError or CalledProcessError silently.
+Compositor hooks update status and refresh Waybar without an additional desktop popup. On Sway the hook also sends a `swaymsg` no-op; on Hyprland it does not invoke a popup command. Missing compositor or notification tools must not interrupt mining.
+
+Desktop notifications via `notify-send` are opt-in for both scan and watch. When `--notify` is supplied, one aggregate notification is sent per scan that mines one or more sessions; scans mining none send no notification. The supplied systemd watch unit runs without `--notify`.
 
 ### **3.4 cli.py: User Interface & Commands**
 
 Use argparse with the following subcommands:
 
-`claudalizer scan [--tmp-dir /tmp/claude-1000] [--out-dir ~/.claude-mined-memories]`  
-`claudalizer distill [--session-id <UUID>] [--endpoint http://localhost:8080/v1] [--model <name>] [--apply-claude-md]`  
-`claudalizer watch [--interval 3] [--debounce 2]`  
-`claudalizer install-systemd [--dry-run]`
+- `claudalizer [--memories-root <path>] scan [--history-limit <non-negative integer>] [--notify]`
+- `claudalizer distill [--project <slug>] [--llm-endpoint <url>] [--llm-model <name>]`
+- `claudalizer [--memories-root <path>] watch [--interval 3] [--history-limit <non-negative integer>] [--notify]`
+- `claudalizer install-systemd [--dry-run]`
 
 > * watch: Uses a loop with os.stat or file descriptor notifications and acquires /tmp/claudalizer.lock via fcntl.flock(fd, fcntl.LOCK\_EX \| fcntl.LOCK\_NB) to ensure single-instance safety.  
 > * install-systemd: Emits units to \~/.config/systemd/user/ and calls systemctl \--user daemon-reload.
@@ -240,8 +236,8 @@ Criterion 5 of GOALS.md G15 (the format is written down) is checked by the grep 
 
 ### **4.3 IPC & Environments (test\_ipc.py)**
 
-> * **test\_sway\_dispatch\_when\_swaysock\_present**: Mock os.environ\["SWAYSOCK"\] \= "/tmp/mock.sock" and verify subprocess.run receives the expected swaymsg arguments.  
-> * **test\_hyprland\_dispatch**: Mock HYPRLAND\_INSTANCE\_SIGNATURE and verify hyprctl dispatch invocation.  
+> * **Sway dispatch**: Verify the hook sends a Sway no-op and refreshes Waybar.
+> * **Hyprland dispatch**: Verify the hook refreshes Waybar without invoking a popup.
 > * **test\_headless\_environment\_no\_crash**: Unset all display and socket environment variables; verify all IPC functions complete silently without raising exceptions.
 
 ## **5\. Review Checklist for Agent Implementations**

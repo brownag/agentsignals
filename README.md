@@ -22,7 +22,7 @@ Lightweight, zero-maintenance background daemon and CLI toolkit designed to moni
 
 3. **IPC & Window Manager Integration:**
    - Desktop notifications via `notify-send`.
-   - Wayland compositor hooks for Sway (`swaymsg`) and Hyprland (`hyprctl`).
+   - Wayland compositor hooks refresh Waybar without an extra desktop popup.
    - Waybar custom JSON status module output at `/tmp/claudalizer_status.json`.
 
 4. **Zero Heavyweight Dependencies:**
@@ -46,8 +46,11 @@ pip install -e . --no-deps --user
 # Scan all ephemeral sessions and extract dossiers
 claudalizer scan
 
-# Scan and send desktop notification & WM signals
+# Opt in to a desktop notification when sessions are mined
 claudalizer scan --notify
+
+# Retain the most recent 100 scans
+claudalizer scan --history-limit 100
 
 # Scan with automatic memory distillation
 claudalizer scan --auto-distill
@@ -64,9 +67,16 @@ claudalizer distill --llm-endpoint http://localhost:11434/v1/chat/completions --
 
 ### 3. Continuous Watch Daemon
 ```bash
-# Run continuous polling / file debounce loop
-claudalizer watch --interval 5.0 --notify --auto-distill
+# Run continuous polling / file debounce loop without desktop notifications
+claudalizer watch --interval 5.0
+
+# Opt in to notifications and disable individual history records
+claudalizer watch --interval 5.0 --notify --history-limit 0
 ```
+
+Notifications are off by default for both `scan` and `watch`. With `--notify`, each scan that mines at least one session sends one aggregate desktop notification; scans that mine nothing send none. Watch automatically distills mined sessions. The supplied systemd watch unit runs `claudalizer watch` without `--notify`.
+
+Both commands accept a non-negative `--history-limit`, defaulting to 50 recent scans. A limit of 0 removes individual history records while retaining the latest scan and cumulative totals. To use a different memories root, put the global option before the command, for example `claudalizer --memories-root /path/to/memories scan --history-limit 100`.
 
 ### 4. Systemd Service & Watch Unit Installation
 ```bash
@@ -98,6 +108,10 @@ Add a custom module in `~/.config/waybar/config`:
 ```
 
 Claudalizer sends `pkill -RTMIN+8 waybar` after each status write, so the module refreshes immediately. Polling every `interval` seconds remains the fallback.
+
+The module text shows the latest scan's mined and active session counts. Its tooltip shows the scan timestamp, those counts, cumulative scans and sessions mined, and retained recent scans. Active sessions are those skipped because they were still changing.
+
+Scan state is stored separately from the temporary Waybar payload in `<memories-root>/scan_status.json` (by default `~/.claude-mined-memories/scan_status.json`). It is atomically written after each completed scan, including scans that mine nothing, and is available across process restarts. Missing or corrupt state starts fresh; if writing fails, mining can continue without persistence. Compositor hooks refresh Waybar without creating an additional desktop popup.
 
 ---
 
