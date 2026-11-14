@@ -159,14 +159,11 @@ def emit_waybar_signal(
     }
     if scan_state and scan_state.get("latest"):
         latest = scan_state["latest"]
-        mined = latest["mined"]
         active = latest["active"]
-        payload["text"] = f"🧠 {mined}" if mined else "🧠"
-        if active:
-            payload["text"] += f" | active {active}"
+        payload["text"] = f"🧠 {active} | {scan_state['total_mined']}"
         lines = [
             f"Last scan: {latest['timestamp']}",
-            f"Mined: {mined} | Active: {active}",
+            f"Mined: {latest['mined']} | Active: {active}",
         ]
         summary = latest.get("summary", "").removeprefix("Last project: ")
         if summary:

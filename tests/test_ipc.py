@@ -182,9 +182,10 @@ def test_scan_state_and_waybar_are_atomic_and_independent(monkeypatch, tmp_path)
 
 @pytest.mark.parametrize(
     "active, expected_text",
-    [(0, "🧠"), (2, "🧠 | active 2")],
+    [(0, "🧠 0 | 3"), (2, "🧠 2 | 3")],
 )
-def test_zero_mined_scan_has_compact_waybar_text(tmp_path, active, expected_text):
+def test_waybar_text_uses_cumulative_mined_and_latest_active(tmp_path, active, expected_text):
+    ipc.record_scan(tmp_path, 3, 0)
     state = ipc.record_scan(tmp_path, 0, active)
     status_file = tmp_path / "waybar.json"
 
@@ -192,6 +193,7 @@ def test_zero_mined_scan_has_compact_waybar_text(tmp_path, active, expected_text
 
     payload = json.loads(status_file.read_text(encoding="utf-8"))
     assert payload["text"] == expected_text
+    assert payload["count"] == 0
 
 
 def test_waybar_tooltip_orders_latest_project_before_totals_and_limits_useful_history(tmp_path):

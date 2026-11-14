@@ -69,7 +69,7 @@ def test_scan_records_batch_and_notifies_once(tmp_path, monkeypatch, notify):
     assert len(state["history"]) == 1
     status = json.loads(ipc.DEFAULT_STATUS_FILE.read_text())
     assert status["count"] == 2
-    assert "active 2" in status["text"]
+    assert status["text"] == "🧠 2 | 2"
     assert len(notifications) == int(notify)
     if notify:
         assert "2" in notifications[0][1]
@@ -89,7 +89,7 @@ def test_empty_scan_records_latest_and_zero_history(tmp_path, monkeypatch):
     assert state["latest"]["mined"] == 0
     assert state["latest"]["active"] == 1
     assert state["history"] == []
-    assert "active 1" in json.loads(ipc.DEFAULT_STATUS_FILE.read_text())["text"]
+    assert json.loads(ipc.DEFAULT_STATUS_FILE.read_text())["text"] == "🧠 1 | 3"
     assert notifications == []
 
 
@@ -118,5 +118,5 @@ def test_watch_records_each_batch_and_preserves_latest_on_shutdown(tmp_path, mon
     assert state["latest"]["mined"] == 0
     assert state["latest"]["active"] == 1
     assert len(state["history"]) == 1
-    assert "active 1" in json.loads(ipc.DEFAULT_STATUS_FILE.read_text())["text"]
+    assert json.loads(ipc.DEFAULT_STATUS_FILE.read_text())["text"] == "🧠 1 | 2"
     assert len(notifications) == int(notify)
