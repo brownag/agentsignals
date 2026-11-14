@@ -1,8 +1,10 @@
 # **Response: Claudalizer Engineering Specification**
 
-**Document Version:** 1.0.0
+**Document Version:** 1.1.0
 
-**Target Release:** claudalizer v0.1.0
+**Target Release:** claudalizer v0.2.0
+
+**Last Updated:** 2026-11-14 (removed the `claudalizer.path` unit; the watch service is the only trigger)
 
 **Role:** Authoritative implementation specification and review rubric for agent-drafted codebase.
 
@@ -37,14 +39,14 @@ claudalizer captures, isolates, and distills high-value behavioral metadata from
 `├── pyproject.toml`  
 `├── README.md`  
 `├── claudalizer/`  
-`│   ├── __init__.py          # Version constant (__version__ = "0.1.0")`  
+`│   ├── __init__.py          # Version constant (__version__ = "0.2.0")`  
 `│   ├── cli.py               # CLI entry points and command routing`  
 `│   ├── miner.py             # Scratchpad scanner, JSONL parser, and snapshot engine`  
 `│   ├── distiller.py         # LLM prompt builder and OpenAI-compatible client`  
 `│   └── ipc.py               # Compositor auto-detection and window manager IPC hooks`  
 `├── systemd/`  
 `│   ├── claudalizer.service  # User-level oneshot execution service`  
-`│   ├── claudalizer.path     # User-level path monitoring unit`  
+`│   ├── claudalizer-watch.service  # User-level watch daemon (sole trigger; polls /tmp/claude-1000)`  
 `│   └── claudalizer.conf     # tmpfiles.d definition to maintain /tmp/claude-1000`  
 `└── tests/`  
     `├── conftest.py          # Shared fixtures (mock /tmp, mock transcripts, mock sockets)`  
@@ -250,7 +252,7 @@ Use this rubric to evaluate the agent's generated code:
 > * \[ \] **Lockfile handling:** Verify fcntl.flock is correctly wrapped in a try...finally block to release /tmp/claudalizer.lock.  
 > * \[ \] **Path safety:** Verify all file reads and directory creations use pathlib.Path.mkdir(parents=True, exist\_ok=True).  
 > * \[ \] **Dossier validation:** Ensure session\_memory.json contains valid ISO-8601 timestamps and serializable types.  
-> * \[ \] **Systemd compliance:** Verify .service sets Type=oneshot and .path correctly specifies PathModified= and DirectoryNotEmpty=.
+> * \[ \] **Systemd compliance:** Verify .service sets Type=oneshot and the watch service runs continuously with Restart= set.
 
 ---
 
