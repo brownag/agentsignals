@@ -1,33 +1,20 @@
 # Project Goals (`planning/GOALS.md`)
 
-Last Updated: 2026-11-12
-Source State: STATE_8.md (orchestration 8: G20 and G21 done; focus complete). Focus: PROJECT_MEMORY.md quality.
+Last Updated: 2026-11-14
+Source State: STATE_9.md (PROJECT_MEMORY.md focus complete). Focus: useful Waybar status and less intrusive notifications.
 
-Intent: durable indexing of Claude session history from volatile `/tmp/claude-1000` before deletion, on Sway/Wayland, with systemd and Waybar included. Current focus: the mined per-project memory (`~/.claude-mined-memories/<slug>/PROJECT_MEMORY.md`) is correct, derived, and worth reading.
-
-Definition of "good" for the focus (working criteria, to be confirmed by the user):
-1. One section per session, no duplicates after any number of re-runs, including `--force`.
-2. Every section is derived from that session. No boilerplate directives.
-3. Tool-friction lines name the failing command and its real error text.
-4. Blind-alleys lists real work, not the claudalizer's own test runs.
-5. The format is written down in `planning/SPEC.md` §4.2, so tests can check it.
-
-Evidence (2026-11-12, `~/.claude-mined-memories`): 8 project files, 22 sections; 17 of 22 sections carry the generic "Maintain strict idempotency..." fallback; most tool-friction entries are "None detected" or bare exit codes; blind-alleys lists claudalizer's own `g3-accept` and `rewrite-check` scratch. Code read: `_append_to_project_memory` appends on every distill, including `--force` (not yet reproduced).
+Intent: durable indexing of Claude session history from volatile `/tmp/claude-1000` before deletion, on Sway/Wayland, with systemd and Waybar included. Current focus: Waybar gives a useful persistent summary of recent mining, while desktop notifications are concise, configurable, and reserved for meaningful events.
 
 ## Circled Goal (Active)
 
-_(none. Every goal in the project-memory focus is done: G15, G18, G19, G20, G21. Choose the next focus with magic-wand.)_
+- **[G23]** Waybar presents persistent latest-scan details and cumulative totals/history, while desktop notifications are concise, opt-in, and limited to scans that mine new sessions; compositor hooks do not create a second popup.
+  - Why now: one coherent user-facing goal addresses both the weak transient bar status and potentially noisy per-session desktop/compositor notifications.
+  - Exit criteria: tests verify persisted last-scan details, cumulative scan/session totals, configurable bounded history, one concise notification per successful mining batch when opted in, and no duplicate compositor popup; `make test` passes; README and SPEC describe the behavior.
+  - First action: implement the persistent status/history store and its tests, then integrate scan/watch reporting.
 
 ## Sequenced Goals (Dependency DAG)
 
-- **[G16]** `--notify` and `--auto-distill` can be turned off from the CLI.
-  - Why here: a real defect (`store_true` with `default=True` cannot be disabled). Small, and it touches `cli.py`, so it goes before G11.
-  - Exit criteria: a test shows `--no-notify` and `--no-auto-distill` (or equivalent) disable each feature, and the defaults stay on.
-  - Depends on: none. Independent of the focus; can run in its own wave.
-
-- **[G11]** Duplicate setup code and dead fields are removed (`cli.py:36-66`, `cli.py:94-117`, `ipc.py:140-151`).
-  - Why here: low system-wide leverage. The `cli.py` setup is duplicated in `handle_scan` and `handle_watch`. The "dead fields" claim is not yet verified.
-  - Depends on: G16 (same file; do after it)
+_(none; G23 is self-contained.)_
 
 ## Independent Backlog
 
@@ -35,9 +22,12 @@ _(none. Every goal in the project-memory focus is done: G15, G18, G19, G20, G21.
   - Why here: the user-visible goal, but its code is done. The live refresh check is user-run and does not block the focus.
   - Exit criteria: the user confirms, after `make systemd-install` and a Waybar restart, that the module updates within a few seconds after `claudalizer scan`. Recorded in `planning/STATE_4.md` when reported.
   - Depends on: none. The G3 timing check is user-run and needed only to verify timing.
-  - Status: implemented; Waybar module installed by `install-systemd` (`922db54`). Styling added to `~/.config/waybar/style.css` (outside the repo). Live check pending.
+  - Status: initial module implemented; G23 supersedes the transient/limited status behavior. Waybar module installed by `install-systemd` (`922db54`). Styling added to `~/.config/waybar/style.css` (outside the repo). Live check pending.
 
 ## Deferred
+
+- **[G16]** `--notify` and `--auto-distill` can be turned off from the CLI.
+  - Trigger: implement as part of G23's notification configurability; `--auto-distill` remains separate unless the implementation plan identifies a direct need.
 
 - **[G22]** Hand-written notes survive rebuilds and reach Claude through a standard injection format.
   - Trigger: you need to write notes by hand that must persist. Today a rebuild discards hand edits (G18, by design). The likely shape is a separate durable file that the distiller reads, not an edit to PROJECT_MEMORY.md.
