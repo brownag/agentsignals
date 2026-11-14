@@ -68,7 +68,7 @@ claudalizer distill --llm-endpoint http://localhost:11434/v1/chat/completions --
 claudalizer watch --interval 5.0 --notify --auto-distill
 ```
 
-### 4. Systemd Service & Path Unit Installation
+### 4. Systemd Service & Watch Unit Installation
 ```bash
 # Dry run to inspect generated unit files
 claudalizer install-systemd --dry-run
@@ -76,9 +76,9 @@ claudalizer install-systemd --dry-run
 # Install user systemd units (~/.config/systemd/user/)
 claudalizer install-systemd
 
-# Enable and start the systemd path monitor
+# Enable and start the watch daemon
 systemctl --user daemon-reload
-systemctl --user enable --now claudalizer.path
+systemctl --user enable --now claudalizer-watch.service
 ```
 
 ---

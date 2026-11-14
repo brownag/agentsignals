@@ -23,7 +23,7 @@
 * `claudalizer/distiller.py` - turns dossiers into `memory.md` and per-project `PROJECT_MEMORY.md`
 * `claudalizer/ipc.py` - desktop notifications (`notify-send`), Sway/Hyprland detection, Waybar signalling
 * `tests/` - pytest suite; `test_miner.py` holds all current tests
-* `systemd/` - unit templates (`claudalizer.path`, `claudalizer.service`, `claudalizer-watch.service`) and the tmpfiles config. `%h/.local/bin/claudalizer` is replaced at install time.
+* `systemd/` - unit templates (`claudalizer.service`, `claudalizer-watch.service`) and the tmpfiles config. `%h/.local/bin/claudalizer` is replaced at install time.
 * `planning/` - goals and specs (`GOALS.md`, `SPEC.md`). Read `GOALS.md` for the current goal sequence.
 * `README.md` - user-facing usage, Waybar example, test instructions
 
@@ -41,7 +41,7 @@
 * **Mined output (durable)**: `~/.claude-mined-memories/` (`DEFAULT_MEMORIES_ROOT`). Per session: `dossier.json`, `scratchpad/` copy, `memory.md` after distillation. Per project: `PROJECT_MEMORY.md`.
 * **Lock file**: `/tmp/claudalizer.lock` (`DEFAULT_LOCK_FILE`). Mining takes an exclusive `flock` with a 10 s timeout.
 * **Settle window**: 2 s (`SETTLE_DEBOUNCE_SECONDS`). Mining size cap per scratchpad file: 250 KiB (`MAX_SCRATCHPAD_FILE_BYTES`).
-* **Installed user units**: `~/.config/systemd/user/claudalizer.service`, `claudalizer.path`, `claudalizer-watch.service`
+* **Installed user units**: `~/.config/systemd/user/claudalizer.service`, `claudalizer-watch.service` (no path unit; it was removed because it flooded failures)
 * **Installed tmpfiles config**: `~/.config/user-tmpfiles.d/claudalizer.conf`
 * **Entry point**: `claudalizer` console script, installed to `~/.local/bin/claudalizer` in the user install.
 * **Dependencies**: none at runtime (stdlib only, per `pyproject.toml` and the README). Dev: pytest, pytest-cov, ruff, mypy.
