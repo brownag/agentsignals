@@ -59,13 +59,18 @@ def detect_compositor() -> Optional[str]:
     return None
 
 
+DEFAULT_STATUS_FILE = Path("/tmp/claudalizer_status.json")
+
+
 def emit_waybar_signal(
-    status_file: Path = Path("/tmp/claudalizer_status.json"),
+    status_file: Optional[Path] = None,
     status: str = "idle",
     message: str = "",
     mined_count: int = 0,
 ) -> None:
     """Write status JSON for custom Waybar / status bar modules.
+
+    status_file defaults to DEFAULT_STATUS_FILE, read at call time, so tests can redirect it.
 
     Waybar custom module can consume this via:
       "exec": "cat /tmp/claudalizer_status.json"
@@ -78,6 +83,8 @@ def emit_waybar_signal(
         "class": status,
         "count": mined_count,
     }
+    if status_file is None:
+        status_file = DEFAULT_STATUS_FILE
     try:
         status_file.parent.mkdir(parents=True, exist_ok=True)
         # Atomic write via temp file

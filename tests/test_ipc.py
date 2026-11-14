@@ -1,4 +1,5 @@
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -114,3 +115,8 @@ def test_waybar_refresh_failure_is_silent(monkeypatch, tmp_path):
     ipc.emit_waybar_signal(status_file=status_file, status="idle")
 
     assert status_file.exists()
+
+
+def test_default_status_file_is_redirected_in_tests():
+    # The autouse fixture points the default at tmp_path, never at /tmp/claudalizer_status.json.
+    assert ipc.DEFAULT_STATUS_FILE != Path("/tmp/claudalizer_status.json")
