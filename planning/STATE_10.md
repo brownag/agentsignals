@@ -15,7 +15,7 @@ Last Updated: 2026-11-14
 | Wave | Task | Status | Code commit(s) | Notes |
 | --- | --- | --- | --- | --- |
 | 1 | T10.1.1 Persistent scan state and Waybar payload | done | `3d1047f` | 18 focused tests passed; full suite 85 passed |
-| 2 | T10.2.1 CLI integration and quiet defaults | pending | — | Depends on wave 1 |
+| 2 | T10.2.1 CLI integration and quiet defaults | done | `f6dd869` | 7 focused tests passed; full suite 90 passed |
 | 3 | T10.3.1 README and SPEC | pending | — | Depends on wave 2 |
 
 ## Task reports
@@ -26,3 +26,9 @@ Changed `claudalizer/ipc.py` and `tests/test_ipc.py`: atomic persistent counters
 Verification: `python -m pytest tests/test_ipc.py -q` — 18 passed; `make test` — 85 passed.
 Deviation: worker additionally ran `make test` despite orchestrator request to run targeted tests only; this is also required by `AGENTS.md` after code/test changes.
 Dependency note: `record_scan(memories_root, mined_count, active_count, summary="", history_limit=50)` returns latest state; wave 2 should pass this state to `emit_waybar_signal(scan_state=...)`.
+
+## T10.2.1
+Status: done (`f6dd869`, `feat(cli): record scans and make notifications opt-in`).
+Changed `claudalizer/cli.py`, `tests/test_cli.py`, `systemd/claudalizer-watch.service`, and `Makefile`: every scan records latest state; notifications are opt-in and aggregated; history limit is configurable.
+Verification: `python -m pytest tests/test_cli.py -q` — 7 passed; `make test` — 90 passed.
+Deviation: none. Watch shutdown restores the last scan payload after lifecycle status hooks.
