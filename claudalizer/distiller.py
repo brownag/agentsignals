@@ -159,6 +159,25 @@ def _session_objective(prompts: List[str]) -> str:
     return "not captured."
 
 
+def frame_llm_block(dossier_data: Dict[str, Any], llm_text: str) -> str:
+    """Put the same title, source, and objective lines on an LLM block as on an offline block.
+
+    The model writes the three sections only. If it already wrote a title, the text is kept as is.
+    """
+    if llm_text.lstrip().startswith("# Mined Behavioral Memory"):
+        return llm_text
+    slug = dossier_data.get("slug", "unknown")
+    decoded = dossier_data.get("decoded_path", slug)
+    objective = _session_objective(dossier_data.get("user_prompts", []))
+    return "\n".join([
+        f"# Mined Behavioral Memory for `{slug}`",
+        f"**Source Directory:** `{decoded}`",
+        f"**Objective:** {objective}",
+        "",
+        llm_text.lstrip(),
+    ])
+
+
 def synthesize_offline_memory_block(dossier_data: Dict[str, Any]) -> str:
     """Generate structured markdown memory block deterministically offline without LLM."""
     errors = dossier_data.get("tool_errors", [])
@@ -268,6 +287,8 @@ class MemoryDistiller:
         if llm_endpoint:
             prompt = build_synthesis_prompt(dossier_data)
             content = call_llm_completion(prompt, endpoint=llm_endpoint, model=llm_model)
+            if content:
+                content = frame_llm_block(dossier_data, content)
 
         if not content:
             # Fallback to offline deterministic synthesis

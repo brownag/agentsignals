@@ -11,7 +11,7 @@ import json
 
 
 import claudalizer.distiller as distiller_mod
-from claudalizer.distiller import MemoryDistiller, build_synthesis_prompt, synthesize_offline_memory_block
+from claudalizer.distiller import MemoryDistiller, build_synthesis_prompt, frame_llm_block, synthesize_offline_memory_block
 
 
 def _write_dossier(root, slug, session_id, dossier):
@@ -415,3 +415,28 @@ def test_objective_not_captured_when_no_prompts():
     block = synthesize_offline_memory_block(_dossier(user_prompts=[]))
     assert "**Objective:** not captured." in block
     assert block.count("### ") == 3
+
+
+# --- LLM blocks carry the title and objective (orchestration 10) ------------------------
+
+
+def test_llm_block_gets_title_and_objective(tmp_path, monkeypatch):
+    root = tmp_path / "memories"
+    _write_dossier(root, "-slug-a", "abcdef12-3456", _dossier(slug="-slug-a", user_prompts=["Ship the memory report today"]))
+    llm_text = "### 1. Tool / Skill Friction\n- None detected.\n\n### 2. Blind Alleys & Discarded Spikes\n- None.\n\n### 3. Directives for CLAUDE.md\n- Check the report.\n"
+    monkeypatch.setattr(distiller_mod, "call_llm_completion", lambda *a, **k: llm_text)
+
+    res = MemoryDistiller(memories_root=root).distill_session(
+        "-slug-a", "abcdef12-3456", llm_endpoint="http://127.0.0.1:9/v1"
+    )
+
+    text = res.read_text(encoding="utf-8")
+    assert text.startswith("# Mined Behavioral Memory for `-slug-a`")
+    assert "**Objective:** Ship the memory report today" in text
+    assert text.index("**Objective:**") < text.index("### 1.")
+    assert text.count("### ") == 3
+
+
+def test_llm_block_with_own_title_is_not_reframed():
+    text = "# Mined Behavioral Memory for `x`\n### 1. Tool / Skill Friction\n- a\n"
+    assert frame_llm_block(_dossier(), text) == text
