@@ -136,7 +136,7 @@ Each distilled session writes two things:
 #### **Synthesis**
 
 * The endpoint comes from the `--llm-endpoint` flag, or else from the environment variable `CLAUDALIZER_LLM_ENDPOINT`. The model comes from `--llm-model` unless that is the default `llama3`, in which case it comes from `CLAUDALIZER_LLM_MODEL` (default `local`). The flag wins. The environment is read at call time.
-* With an endpoint, `call_llm_completion` sends the prompt from `build_synthesis_prompt` to an OpenAI-compatible `/v1/chat/completions` endpoint, using stdlib `urllib`. The request sets `max_tokens` to 1024 and `chat_template_kwargs.enable_thinking` to false, because a reasoning model otherwise spends the whole budget on reasoning and returns no visible content. The timeout is 300 s. Non-empty text in the reply becomes the memory block.
+* With an endpoint, `call_llm_completion` sends the prompt from `build_synthesis_prompt` to an OpenAI-compatible `/v1/chat/completions` endpoint, using stdlib `urllib`. The request sets `max_tokens` to 1024 and `chat_template_kwargs.enable_thinking` to false, because a reasoning model otherwise spends the whole budget on reasoning and returns no visible content. The timeout is 300 s. `temperature` is 0.2. The request carries only `Content-Type: application/json`; there is no authentication, because the endpoint is a local server. There is one attempt and no retry: a connection error, HTTP error, or empty reply returns no content, and the offline block is used. Non-empty text in the reply becomes the memory block.
 * If there is no endpoint, or the call fails or returns no content, `synthesize_offline_memory_block` builds the block from the dossier, with no network access. An empty reply is logged with a warning that names the endpoint, so the fallback is not silent.
 
 #### **Offline block format**
@@ -146,6 +146,8 @@ The block starts with `# Mined Behavioral Memory for <slug>`, then a `**Source D
 1. `### 1. Tool / Skill Friction`: one line per failing tool call, in the form `- **{tool}** (`{command}`): {first output line containing an error marker}`. Markers: `FAILED`, `Error`, `error:`, `error[`, `Traceback`, `panicked`, `Exception`, `command not found`, `No such file`. A call with no such line is dropped. If none remain, `- None detected.`. Repeated commands are shown once.
 2. `### 2. Blind Alleys & Discarded Spikes`: one line per scratchpad file, except scratch whose first path segment is `g3-accept` or `rewrite-check` (the claudalizer's own test runs), which is excluded. If none remain, `- No ephemeral scratchpads recorded.`
 3. `### 3. Directives for CLAUDE.md`: directives inferred from the tool errors. Three error patterns are matched (a missing Python environment, a missing binary, a Cargo error). When no error matches, or there are no errors, the section is `- None detected.`. The directives come only from the session; no boilerplate is written.
+
+An LLM block gets the same title, source, and objective lines as an offline block (`frame_llm_block`). The model writes the three sections only. If the reply already starts with `# Mined Behavioral Memory`, it is kept as is.
 
 #### **PROJECT\_MEMORY.md format**
 

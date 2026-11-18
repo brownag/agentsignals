@@ -440,3 +440,32 @@ def test_llm_block_gets_title_and_objective(tmp_path, monkeypatch):
 def test_llm_block_with_own_title_is_not_reframed():
     text = "# Mined Behavioral Memory for `x`\n### 1. Tool / Skill Friction\n- a\n"
     assert frame_llm_block(_dossier(), text) == text
+
+
+def test_llm_request_sets_temperature_and_sends_no_auth_header(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["body"] = json.loads(req.data.decode("utf-8"))
+        captured["headers"] = {k.lower(): v for k, v in req.header_items()}
+        return _FakeResponse(json.dumps({"choices": [{"message": {"content": "BLOCK TEXT"}}]}).encode())
+
+    monkeypatch.setattr(distiller_mod.urllib.request, "urlopen", fake_urlopen)
+    distiller_mod.call_llm_completion("prompt", endpoint="http://127.0.0.1:9/v1/chat/completions", model="local")
+
+    assert captured["body"]["temperature"] == 0.2
+    assert "authorization" not in captured["headers"]
+
+
+def test_llm_failure_makes_one_attempt_and_returns_none(monkeypatch):
+    calls = []
+
+    def fake_urlopen(req, timeout=None):
+        calls.append(req)
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(distiller_mod.urllib.request, "urlopen", fake_urlopen)
+    out = distiller_mod.call_llm_completion("prompt", endpoint="http://127.0.0.1:9/v1/chat/completions", model="local")
+
+    assert out is None
+    assert len(calls) == 1
