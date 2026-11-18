@@ -1,22 +1,32 @@
 # Project Goals (`planning/GOALS.md`)
 
-Last Updated: 2026-11-14
-Source State: STATE_9.md (PROJECT_MEMORY.md focus complete). Focus: useful Waybar status and less intrusive notifications.
+Last Updated: 2026-11-17
+Source State: STATE_9.md (PROJECT_MEMORY.md focus complete). G23 (Waybar history, opt-in notifications) complete 2026-11-17; focus moves to G10.
 
 Intent: durable indexing of Claude session history from volatile `/tmp/claude-1000` before deletion, on Sway/Wayland, with systemd and Waybar included. Current focus: Waybar gives a useful persistent summary of recent mining, while desktop notifications are concise, configurable, and reserved for meaningful events.
 
 ## Circled Goal (Active)
 
-- **[G23]** Waybar presents persistent latest-scan details and cumulative totals/history, while desktop notifications are concise, opt-in, and limited to scans that mine new sessions; compositor hooks do not create a second popup.
-  - Why now: one coherent user-facing goal addresses both the weak transient bar status and potentially noisy per-session desktop/compositor notifications.
-  - Exit criteria: tests verify persisted last-scan details, cumulative scan/session totals, configurable bounded history, one concise notification per successful mining batch when opted in, and no duplicate compositor popup; `make test` passes; README and SPEC describe the behavior.
-  - First action: implement the persistent status/history store and its tests, then integrate scan/watch reporting.
+- **[G16]** `watch --auto-distill` can be turned off from the CLI.
+  - Why now: the last open part of the notification and flag configurability that G23 started. It is a small, testable CLI change, and no other goal depends on it. Nothing else is more leveraged: G4 and G6-followup need the user's live checks, and G_dead-notify is cleanup.
+  - Exit criteria: `claudalizer watch --no-auto-distill` disables distillation; the default stays on; a test in `tests/test_cli.py` covers both settings; SPEC §3.4 and README document the flag; `make test` passes.
+  - First action: in `claudalizer/cli.py:294`, change `watch --auto-distill` from `store_true` with `default=True` to `argparse.BooleanOptionalAction` with `default=True`, then add the parser test.
+  - Files in scope: `claudalizer/cli.py`, `tests/test_cli.py`, `planning/SPEC.md` §3.4, `README.md`.
+  - Status: Ready. No dependencies.
 
 ## Sequenced Goals (Dependency DAG)
 
-_(none; G23 is self-contained.)_
+_(none.)_
 
 ## Independent Backlog
+
+- **[G_dead-notify]** Remove uncalled `notify_extraction` from `claudalizer/ipc.py`, so no per-session popup path remains.
+  - Why here: cleanup only. If anything calls it later, it would reintroduce the duplicate popup G23 removed.
+  - Exit criteria: function and its imports removed; `make test` passes.
+  - Depends on: none.
+
+- **[G6-followup]** Confirm `claudalizer.service` no longer hits `start-limit-hit`.
+  - Status: Last failure 2026-11-12 23:11. The path unit that caused the repeated starts was removed. The service is now disabled and inactive. Cause not recorded in the repo; re-check after `make systemd-install` (user-run).
 
 - **[G4]** Waybar shows current capture state and refreshes after each scan.
   - Why here: the user-visible goal, but its code is done. The live refresh check is user-run and does not block the focus.
@@ -26,8 +36,9 @@ _(none; G23 is self-contained.)_
 
 ## Deferred
 
-- **[G16]** `--notify` and `--auto-distill` can be turned off from the CLI.
-  - Trigger: implement as part of G23's notification configurability; `--auto-distill` remains separate unless the implementation plan identifies a direct need.
+- **[G16]** `--auto-distill` can be turned off from the CLI on `watch`.
+  - Status: `--notify` is now opt-in and can be turned off (G23). `watch --auto-distill` still defaults to on and cannot be turned off (`store_true` with `default=True`).
+  - Trigger: you want to disable automatic distillation from the CLI.
 
 - **[G22]** Hand-written notes survive rebuilds and reach Claude through a standard injection format.
   - Trigger: you need to write notes by hand that must persist. Today a rebuild discards hand edits (G18, by design). The likely shape is a separate durable file that the distiller reads, not an edit to PROJECT_MEMORY.md.
@@ -40,9 +51,17 @@ _(none; G23 is self-contained.)_
 
 ## Done
 
+- **[G10]** Distillation LLM client matches the spec (auth, temperature, endpoint, retry).
+  - Status: Done (2026-11-17). The spec was silent on temperature, auth and retry; it now states temperature 0.2, no auth (local endpoint), and one attempt with offline fallback. Two tests pin these. `make test` 95 passed. The real-data run is user-run.
+- **[G_memlab-open]** LLM-written memory blocks get a title and Objective line.
+  - Status: Done (2026-11-17). Commit `0f73863` (`frame_llm_block`). Covered by `tests/test_distiller.py`; SPEC §3.2 documents it.
+
+- **[G23]** Waybar presents persistent latest-scan details and cumulative totals/history; desktop notifications are opt-in, one per mining batch, and no compositor popup.
+  - Status: Done (2026-11-17). `3d1047f` (persistent scan history), `f6dd869` (opt-in notify, scan recording), `0eb1ee9` (docs), `00c836f` (headline). `make test` 93 passed. Dead `notify_extraction` in `claudalizer/ipc.py` remains uncalled (see Independent Backlog). Live Waybar check is user-run (G4).
+
 - **[G_memlab]** Memory blocks say what each session was for, and the LLM path works without extra flags.
   - Status: Done in code (orchestration 9, `planning/STATE_9.md`): `d3ebd6f` (endpoint from `CLAUDALIZER_LLM_ENDPOINT`; thinking off; 1024 tokens; 300 s timeout; empty reply warns), `fd42669` (Objective line in the offline block), `3a33a05` (SPEC). `make test` 73 passed. Real-data run pending (user): `CLAUDALIZER_LLM_ENDPOINT=http://localhost:8090/v1/chat/completions claudalizer distill --force`.
-  - Open: LLM-written blocks have no title or Objective line (decision pending).
+  - Resolved: LLM-written blocks now get the title and Objective line (`0f73863`, see G_memlab-open).
 - **[G_scan]** `claudalizer scan` mines sessions whose transcript changed, and says what it skipped.
   - Status: Done (`b515b9e`). Before: a transcript-only change was never re-mined (23 sessions in the real data), and skipped sessions were silent, so scan printed `Mined 0`. Now the skip check also compares the transcript mtime, and scan prints `Skipped: N active, N already up to date, N with no content`, naming the active sessions. Tests in `tests/test_scan_report.py`. `make test` 65 passed.
 - **[G20]** The blind-alleys list excludes the claudalizer's own test scratch.
