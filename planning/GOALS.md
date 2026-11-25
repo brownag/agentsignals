@@ -1,7 +1,7 @@
 # Project Goals (`planning/GOALS.md`)
 
 Last Updated: 2026-11-24
-Source State: STATE_10.md (G23 complete). Re-ranked 2026-11-24 with Magic Wand. G16, G_dead-notify and G17 are done, and so is the live check (G_live: G4, G6-followup, G3). Only the real-data LLM run is left open.
+Source State: STATE_10.md (G23 complete). Re-ranked 2026-11-24 with Magic Wand. G16, G_dead-notify and G17 are done, and so is the live check (G_live: G4, G6-followup, G3). Only the real-data LLM run is left open. G_opencode added to the backlog 2026-11-24.
 
 Intent: durable indexing of Claude session history from volatile `/tmp/claude-1000` before deletion, on Sway/Wayland, with systemd and Waybar included. Current focus: the installed system works live; what remains is confirming LLM distillation on real data.
 
@@ -19,7 +19,20 @@ _(none.)_
 
 ## Independent Backlog
 
-_(none.)_
+- **[G_opencode]** `claudalizer scan` and `watch` mine finished opencode sessions into dossiers and memory, alongside Claude Code sessions.
+  - Why: opencode sessions hold the same kind of history (prompts, tool errors, touched files), but claudalizer only reads Claude Code. Research: `planning/research/OPENCODE_SESSIONS.md` (opencode v2.4.1, commit `6f05140`).
+  - Source: the SQLite database `~/.local/share/opencode/opencode.db` (`OPENCODE_DB` overrides it), tables `session_v2`, `session_message`, `session_part`. Read-only via stdlib `sqlite3`. `/tmp/opencode` holds worktrees, not session data, and is not mined.
+  - Exit criteria:
+    - An opencode source module sits beside the Claude Code one in the miner; the distiller is unchanged.
+    - A session is mined only when idle (`time_idle >= time_busy`) and changed since its dossier, judged by message and part `time_updated`, not only `session_v2.time_updated`.
+    - Dossiers record user prompts, tool errors (`state.status="error"`), failed shell commands (non-zero `state.metadata.exit`; text `Exit code: N`), and touched files from `data.snapshot.files`. Assistant text is read from both inline message data and `session_part` rows.
+    - The project slug comes from `session_v2.directory`, so opencode and Claude Code sessions in one repo share a `PROJECT_MEMORY.md`.
+    - Every session is mined, subagents included: each subagent session's prompts, errors and touched files are folded into its parent's dossier (decided 2026-11-24: mine all of it).
+    - An unknown schema migration skips the opencode source with a warning; the watch loop does not crash.
+    - Tests use a fixture database built in `tmp_path`; `make check` passes.
+  - Risks: the v2 schema changed about 90 times in 2026; the HTTP API and export are experimental, so they are not used.
+  - First action: write SPEC sections for the opencode source, including how a subagent session is linked to its parent.
+  - Depends on: none.
 
 ## Deferred
 
