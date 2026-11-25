@@ -1,56 +1,47 @@
 # Project Goals (`planning/GOALS.md`)
 
-Last Updated: 2026-11-17
-Source State: STATE_9.md (PROJECT_MEMORY.md focus complete). G23 (Waybar history, opt-in notifications) complete 2026-11-17; focus moves to G10.
+Last Updated: 2026-11-24
+Source State: STATE_10.md (G23 complete). Re-ranked 2026-11-24 with Magic Wand: G16, G_dead-notify and G17 done; the remaining open goals are user-run checks.
 
-Intent: durable indexing of Claude session history from volatile `/tmp/claude-1000` before deletion, on Sway/Wayland, with systemd and Waybar included. Current focus: Waybar gives a useful persistent summary of recent mining, while desktop notifications are concise, configurable, and reserved for meaningful events.
+Intent: durable indexing of Claude session history from volatile `/tmp/claude-1000` before deletion, on Sway/Wayland, with systemd and Waybar included. Current focus: confirm the installed system works live.
 
 ## Circled Goal (Active)
 
-- **[G16]** `watch --auto-distill` can be turned off from the CLI.
-  - Why now: the last open part of the notification and flag configurability that G23 started. It is a small, testable CLI change, and no other goal depends on it. Nothing else is more leveraged: G4 and G6-followup need the user's live checks, and G_dead-notify is cleanup.
-  - Exit criteria: `claudalizer watch --no-auto-distill` disables distillation; the default stays on; a test in `tests/test_cli.py` covers both settings; SPEC §3.4 and README document the flag; `make test` passes.
-  - First action: in `claudalizer/cli.py:294`, change `watch --auto-distill` from `store_true` with `default=True` to `argparse.BooleanOptionalAction` with `default=True`, then add the parser test.
-  - Files in scope: `claudalizer/cli.py`, `tests/test_cli.py`, `planning/SPEC.md` §3.4, `README.md`.
-  - Status: Ready. No dependencies.
+- **[G_live]** After one `make systemd-install`, the installed units and Waybar module are confirmed working on this machine.
+  - Why now: no agent-doable goal is open. This one user-run step settles three goals: G4, G6-followup and G3.
+  - Exit criteria: (1) Waybar updates within a few seconds after `claudalizer scan` (G4); (2) `systemctl --user status claudalizer.service` shows no `start-limit-hit` after install (G6-followup); (3) a write under `/tmp/claude-1000` produces a scan within 10 s (G3). Results recorded in `planning/STATE_4.md` or a new STATE file.
+  - First action: you run `make systemd-dry-run`, then `make systemd-install` (ask-first per AGENTS.md), then restart Waybar.
+  - Status: User-run.
 
 ## Sequenced Goals (Dependency DAG)
 
-_(none.)_
+- **[G4]** Waybar shows current capture state and refreshes after each scan.
+  - Depends on: G_live. Code done (`922db54`, G23 commits); styling in `~/.config/waybar/style.css` (outside the repo).
+- **[G6-followup]** `claudalizer.service` no longer hits `start-limit-hit`.
+  - Depends on: G_live. Last failure 2026-11-12 23:11; the path unit that caused repeated starts was removed.
+- **[G3]** Every write under `/tmp/claude-1000` triggers a scan within 10 s.
+  - Depends on: G_live. Implemented (`70a82e2`, `420971f`).
 
 ## Independent Backlog
 
-- **[G_dead-notify]** Remove uncalled `notify_extraction` from `claudalizer/ipc.py`, so no per-session popup path remains.
-  - Why here: cleanup only. If anything calls it later, it would reintroduce the duplicate popup G23 removed.
-  - Exit criteria: function and its imports removed; `make test` passes.
-  - Depends on: none.
-
-- **[G6-followup]** Confirm `claudalizer.service` no longer hits `start-limit-hit`.
-  - Status: Last failure 2026-11-12 23:11. The path unit that caused the repeated starts was removed. The service is now disabled and inactive. Cause not recorded in the repo; re-check after `make systemd-install` (user-run).
-
-- **[G4]** Waybar shows current capture state and refreshes after each scan.
-  - Why here: the user-visible goal, but its code is done. The live refresh check is user-run and does not block the focus.
-  - Exit criteria: the user confirms, after `make systemd-install` and a Waybar restart, that the module updates within a few seconds after `claudalizer scan`. Recorded in `planning/STATE_4.md` when reported.
-  - Depends on: none. The G3 timing check is user-run and needed only to verify timing.
-  - Status: initial module implemented; G23 supersedes the transient/limited status behavior. Waybar module installed by `install-systemd` (`922db54`). Styling added to `~/.config/waybar/style.css` (outside the repo). Live check pending.
+- **[G_llm-live]** `CLAUDALIZER_LLM_ENDPOINT=http://localhost:8090/v1/chat/completions claudalizer distill --force` writes memory blocks with a title and an Objective line from real data.
+  - Status: User-run (needs the local LLM endpoint). Code done under G_memlab, G_memlab-open and G10.
 
 ## Deferred
 
-- **[G16]** `--auto-distill` can be turned off from the CLI on `watch`.
-  - Status: `--notify` is now opt-in and can be turned off (G23). `watch --auto-distill` still defaults to on and cannot be turned off (`store_true` with `default=True`).
-  - Trigger: you want to disable automatic distillation from the CLI.
-
 - **[G22]** Hand-written notes survive rebuilds and reach Claude through a standard injection format.
   - Trigger: you need to write notes by hand that must persist. Today a rebuild discards hand edits (G18, by design). The likely shape is a separate durable file that the distiller reads, not an edit to PROJECT_MEMORY.md.
-- **[G10]** Distillation LLM client matches the spec (auth, temperature, endpoint, retry).
-  - Trigger: a local LLM endpoint is in use. Relevant to the focus: the LLM path is the one that writes most of the memory text, and it is not yet tested.
 - **[G13]** Extract history from `/tmp/claude-1000/bash-edit-diff/` (bare git repositories whose objects hold earlier versions of edited files). Needs a new extractor; a slug-filter change alone captures nothing.
   - Trigger: you want that history mined.
-- **[G17]** `make lint` reports zero ruff findings and fails the build on findings. 12 pre-existing findings; `make lint` ends with `|| echo` so it never fails.
-  - Trigger: before lint is wired into CI or a release.
 
 ## Done
 
+- **[G16]** `watch --auto-distill` can be turned off from the CLI.
+  - Status: Done (2026-11-24). `argparse.BooleanOptionalAction` with `default=True`; `--no-auto-distill` disables it. `test_watch_auto_distill_can_be_turned_off`; SPEC §3.4, README and AGENTS.md updated.
+- **[G_dead-notify]** Uncalled `notify_extraction` removed from `claudalizer/ipc.py`.
+  - Status: Done (2026-11-24). Function and its test call removed.
+- **[G17]** `make lint` reports zero ruff findings and fails the build on findings.
+  - Status: Done (2026-11-24). 9 findings auto-fixed (unused imports, one placeholder-less f-string). `make lint` now exits non-zero on findings (verified with a probe file). `make check` 96 passed.
 - **[G10]** Distillation LLM client matches the spec (auth, temperature, endpoint, retry).
   - Status: Done (2026-11-17). The spec was silent on temperature, auth and retry; it now states temperature 0.2, no auth (local endpoint), and one attempt with offline fallback. Two tests pin these. `make test` 95 passed. The real-data run is user-run.
 - **[G_memlab-open]** LLM-written memory blocks get a title and Objective line.
@@ -104,7 +95,7 @@ _(none.)_
 ## Blocked / Pruned
 
 - **[G3]** Every write under `/tmp/claude-1000` triggers a scan within 10 s.
-  - Status: Blocked / External Watch. Implemented (commits `70a82e2`, `420971f`); awaiting the live timing check, which is user-run (`/tmp/claude-1000`, per AGENTS.md ask-first). G4's timing verification needs it.
+  - Status: Moved to Sequenced Goals under G_live.
 - **[G12]** Injection into `.claude/CLAUDE.md`.
   - Status: Pruned
   - Reason: outside durable indexing, and it adds a second write target.

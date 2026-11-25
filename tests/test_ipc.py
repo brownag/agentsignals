@@ -53,7 +53,6 @@ def test_headless_environment_no_crash(clean_env, monkeypatch, tmp_path):
     ipc.emit_waybar_signal(status_file=status_file, status="idle", message="x", mined_count=0)
     assert status_file.exists()
     assert ipc.dispatch_wm_hook("idle", {"message": "x"}) is False
-    ipc.notify_extraction("-home-user-proj", "abcdef12-3456", 1, 0)
 
 
 def test_sway_glob_fallback_requires_socket(clean_env, monkeypatch, tmp_path):

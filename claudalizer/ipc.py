@@ -240,17 +240,3 @@ def dispatch_wm_hook(
         return True
 
     return False
-
-
-def notify_extraction(slug: str, session_id: str, scratchpad_files: int, error_count: int) -> None:
-    """Convenience helper to dispatch notifications and WM hooks when a session is mined."""
-    title = f"Claudalizer Mined: {slug}"
-    body = f"Session {session_id[:8]}... captured:\n• {scratchpad_files} scratchpad files\n• {error_count} behavioral signals"
-    send_notification(title, body)
-    dispatch_wm_hook("extracted", {
-        "slug": slug,
-        "session_id": session_id,
-        "scratchpad_files": scratchpad_files,
-        "error_count": error_count,
-        "message": f"Mined {slug} ({error_count} errors)",
-    })
