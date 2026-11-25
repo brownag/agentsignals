@@ -1,31 +1,25 @@
 # Project Goals (`planning/GOALS.md`)
 
 Last Updated: 2026-11-24
-Source State: STATE_10.md (G23 complete). Re-ranked 2026-11-24 with Magic Wand: G16, G_dead-notify and G17 done; the remaining open goals are user-run checks.
+Source State: STATE_10.md (G23 complete). Re-ranked 2026-11-24 with Magic Wand. G16, G_dead-notify and G17 are done, and so is the live check (G_live: G4, G6-followup, G3). Only the real-data LLM run is left open.
 
-Intent: durable indexing of Claude session history from volatile `/tmp/claude-1000` before deletion, on Sway/Wayland, with systemd and Waybar included. Current focus: confirm the installed system works live.
+Intent: durable indexing of Claude session history from volatile `/tmp/claude-1000` before deletion, on Sway/Wayland, with systemd and Waybar included. Current focus: the installed system works live; what remains is confirming LLM distillation on real data.
 
 ## Circled Goal (Active)
 
-- **[G_live]** After one `make systemd-install`, the installed units and Waybar module are confirmed working on this machine.
-  - Why now: no agent-doable goal is open. This one user-run step settles three goals: G4, G6-followup and G3.
-  - Exit criteria: (1) Waybar updates within a few seconds after `claudalizer scan` (G4); (2) `systemctl --user status claudalizer.service` shows no `start-limit-hit` after install (G6-followup); (3) a write under `/tmp/claude-1000` produces a scan within 10 s (G3). Results recorded in `planning/STATE_4.md` or a new STATE file.
-  - First action: you run `make systemd-dry-run`, then `make systemd-install` (ask-first per AGENTS.md), then restart Waybar.
+- **[G_llm-live]** `CLAUDALIZER_LLM_ENDPOINT=http://localhost:8090/v1/chat/completions claudalizer distill --force` writes memory blocks with a title and an Objective line from real data.
+  - Why now: it is the only open goal left that the code is waiting on. The code is done under G_memlab, G_memlab-open and G10.
+  - Exit criteria: after the run, the `memory.md` files under `~/.claude-mined-memories/` have LLM-written blocks, each with a title and an `Objective:` line.
+  - First action: start the local LLM endpoint, then you run the command above.
   - Status: User-run.
 
 ## Sequenced Goals (Dependency DAG)
 
-- **[G4]** Waybar shows current capture state and refreshes after each scan.
-  - Depends on: G_live. Code done (`922db54`, G23 commits); styling in `~/.config/waybar/style.css` (outside the repo).
-- **[G6-followup]** `claudalizer.service` no longer hits `start-limit-hit`.
-  - Depends on: G_live. Last failure 2026-11-12 23:11; the path unit that caused repeated starts was removed.
-- **[G3]** Every write under `/tmp/claude-1000` triggers a scan within 10 s.
-  - Depends on: G_live. Implemented (`70a82e2`, `420971f`).
+_(none.)_
 
 ## Independent Backlog
 
-- **[G_llm-live]** `CLAUDALIZER_LLM_ENDPOINT=http://localhost:8090/v1/chat/completions claudalizer distill --force` writes memory blocks with a title and an Objective line from real data.
-  - Status: User-run (needs the local LLM endpoint). Code done under G_memlab, G_memlab-open and G10.
+_(none.)_
 
 ## Deferred
 
@@ -33,8 +27,20 @@ Intent: durable indexing of Claude session history from volatile `/tmp/claude-10
   - Trigger: you need to write notes by hand that must persist. Today a rebuild discards hand edits (G18, by design). The likely shape is a separate durable file that the distiller reads, not an edit to PROJECT_MEMORY.md.
 - **[G13]** Extract history from `/tmp/claude-1000/bash-edit-diff/` (bare git repositories whose objects hold earlier versions of edited files). Needs a new extractor; a slug-filter change alone captures nothing.
   - Trigger: you want that history mined.
+- **[G_churn]** A session that writes in bursts is re-mined once it settles, not on every watch tick.
+  - Observed 2026-11-24: the 2 s settle window is shorter than the 3 s watch interval, so an active session (a background task writing output) is re-mined about every 3 s, never shows as Active, and pushes up Waybar's total-mined count. Harmless; changing the settle window is ask-first.
+  - Trigger: the total-mined count or the CPU and I/O from re-mining become a problem.
 
 ## Done
+
+- **[G_live]** After `make systemd-install`, the installed units and Waybar module work on this machine.
+  - Status: Done (2026-11-24). Units installed at 17:31 and Waybar restarted.
+- **[G4]** Waybar shows current capture state and refreshes after each scan.
+  - Status: Done (2026-11-24). The user confirmed the module updates after `claudalizer scan`. `/tmp/claudalizer_status.json` was rewritten as soon as the scan finished (17:32:32).
+- **[G6-followup]** `claudalizer.service` no longer hits `start-limit-hit`.
+  - Status: Done (2026-11-24). Inactive since the install, with no `start-limit-hit` in the journal.
+- **[G3]** Every write under `/tmp/claude-1000` triggers a scan within 10 s.
+  - Status: Done (2026-11-24). `claudalizer-watch.service` mined writes inside nested session folders about every 3 s (journal, `hyd-rs` session task output).
 
 - **[G16]** `watch --auto-distill` can be turned off from the CLI.
   - Status: Done (2026-11-24). `argparse.BooleanOptionalAction` with `default=True`; `--no-auto-distill` disables it. `test_watch_auto_distill_can_be_turned_off`; SPEC §3.4, README and AGENTS.md updated.
@@ -95,7 +101,7 @@ Intent: durable indexing of Claude session history from volatile `/tmp/claude-10
 ## Blocked / Pruned
 
 - **[G3]** Every write under `/tmp/claude-1000` triggers a scan within 10 s.
-  - Status: Moved to Sequenced Goals under G_live.
+  - Status: Done (2026-11-24); see Done.
 - **[G12]** Injection into `.claude/CLAUDE.md`.
   - Status: Pruned
   - Reason: outside durable indexing, and it adds a second write target.
