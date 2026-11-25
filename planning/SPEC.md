@@ -183,7 +183,8 @@ Use argparse with the following subcommands:
 
 - `claudalizer [--memories-root <path>] scan [--history-limit <non-negative integer>] [--notify]`
 - `claudalizer distill [--project <slug>] [--llm-endpoint <url>] [--llm-model <name>]`
-- `claudalizer [--memories-root <path>] watch [--interval 3] [--history-limit <non-negative integer>] [--notify]`
+- `claudalizer [--memories-root <path>] watch [--interval 3] [--history-limit <non-negative integer>] [--notify] [--auto-distill | --no-auto-distill]`
+  - `watch` distills mined sessions by default; `--no-auto-distill` turns this off.
 - `claudalizer install-systemd [--dry-run]`
 
 > * watch: Uses a loop with os.stat or file descriptor notifications and acquires /tmp/claudalizer.lock via fcntl.flock(fd, fcntl.LOCK\_EX \| fcntl.LOCK\_NB) to ensure single-instance safety.  

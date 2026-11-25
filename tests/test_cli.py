@@ -51,6 +51,13 @@ def test_parser_options(command):
         parser.parse_args([command, "--history-limit", "-1"])
 
 
+def test_watch_auto_distill_can_be_turned_off():
+    parser = cli.build_parser()
+    assert parser.parse_args(["watch"]).auto_distill is True
+    assert parser.parse_args(["watch", "--auto-distill"]).auto_distill is True
+    assert parser.parse_args(["watch", "--no-auto-distill"]).auto_distill is False
+
+
 @pytest.mark.parametrize("notify", [False, True])
 def test_scan_records_batch_and_notifies_once(tmp_path, monkeypatch, notify):
     monkeypatch.setattr(cli, "SessionMiner", _fake_miner([[_dossier(), _dossier("second")]], ["a", "b"]))

@@ -290,7 +290,7 @@ def build_parser() -> argparse.ArgumentParser:
     watch_p.add_argument("--project", help="Filter by specific project slug")
     watch_p.add_argument("--notify", action="store_true", help="Send notifications upon mining")
     watch_p.add_argument("--history-limit", type=_non_negative_int, default=50, help="Recent scans to retain (0 disables history)")
-    watch_p.add_argument("--auto-distill", action="store_true", default=True, help="Auto distill mined sessions")
+    watch_p.add_argument("--auto-distill", action=argparse.BooleanOptionalAction, default=True, help="Auto distill mined sessions (default: on)")
     watch_p.add_argument("--llm-endpoint", help="OpenAI-compatible LLM endpoint")
     watch_p.add_argument("--llm-model", default="llama3", help="LLM model name for distillation")
 

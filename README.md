@@ -74,7 +74,7 @@ claudalizer watch --interval 5.0
 claudalizer watch --interval 5.0 --notify --history-limit 0
 ```
 
-Notifications are off by default for both `scan` and `watch`. With `--notify`, each scan that mines at least one session sends one aggregate desktop notification; scans that mine nothing send none. Watch automatically distills mined sessions. The supplied systemd watch unit runs `claudalizer watch` without `--notify`.
+Notifications are off by default for both `scan` and `watch`. With `--notify`, each scan that mines at least one session sends one aggregate desktop notification; scans that mine nothing send none. Watch automatically distills mined sessions; pass `--no-auto-distill` to turn that off. The supplied systemd watch unit runs `claudalizer watch` without `--notify`.
 
 Both commands accept a non-negative `--history-limit`, defaulting to 50 recent scans. A limit of 0 removes individual history records while retaining the latest scan and cumulative totals. To use a different memories root, put the global option before the command, for example `claudalizer --memories-root /path/to/memories scan --history-limit 100`.
 

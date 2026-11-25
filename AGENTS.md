@@ -53,7 +53,7 @@
 * A session with an existing `dossier.json` is re-mined only when a file under its scratchpad is newer than that dossier. Otherwise it is skipped.
 * Sessions with no user prompts, no tool errors, and no scratchpad files produce no dossier.
 * `make lint` ends with `|| echo`, so it never fails the build. Read its output for ruff findings.
-* `watch` defaults `--notify` and `--auto-distill` to on, and `store_true` with `default=True` means they cannot be turned off from the CLI.
+* `--notify` is off by default for `scan` and `watch`. `watch` distills by default; `--no-auto-distill` turns it off.
 
 ## System Boundaries & Operational Rules
 
