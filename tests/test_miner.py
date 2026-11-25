@@ -1,7 +1,6 @@
 import json
 import os
 import shutil
-import tempfile
 import time
 from pathlib import Path
 import pytest
@@ -16,8 +15,8 @@ from claudalizer.miner import (
     is_file_settled,
 )
 import claudalizer.miner as miner_module
-from claudalizer.distiller import MemoryDistiller, build_synthesis_prompt, synthesize_offline_memory_block
-from claudalizer.ipc import detect_compositor, emit_waybar_signal
+from claudalizer.distiller import MemoryDistiller
+from claudalizer.ipc import emit_waybar_signal
 from claudalizer.cli import main as cli_main
 
 

@@ -29,7 +29,7 @@ test-cov: ## Run unit tests with code coverage report
 	$(PYTHON) -m pytest tests/ --cov=claudalizer --cov-report=term-missing
 
 lint: ## Run linting checks using ruff
-	@command -v ruff >/dev/null 2>&1 && ruff check claudalizer tests || echo "ruff not found, skipping."
+	@if command -v ruff >/dev/null 2>&1; then ruff check claudalizer tests; else echo "ruff not found, skipping."; fi
 
 check: lint test ## Run linting and unit tests
 

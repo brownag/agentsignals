@@ -18,7 +18,6 @@ from claudalizer.miner import (
     DEFAULT_MEMORIES_ROOT,
     DEFAULT_TMP_ROOT,
     SessionMiner,
-    file_lock,
 )
 
 logger = logging.getLogger("claudalizer")
@@ -231,7 +230,7 @@ def handle_install_systemd(args: argparse.Namespace) -> int:
     dest_watch.write_text(watch_content, encoding="utf-8")
     dest_tmpfiles.write_text(tmpfiles_content, encoding="utf-8")
 
-    print(f"Installed systemd units:")
+    print("Installed systemd units:")
     print(f"  • {dest_service}")
     print(f"  • {dest_watch}")
     print(f"  • {dest_tmpfiles}")

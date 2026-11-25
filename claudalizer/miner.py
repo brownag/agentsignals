@@ -1,7 +1,6 @@
 """Core scanning, snapshotting, and extraction engine for claudalizer."""
 
 import fcntl
-import hashlib
 import json
 import logging
 import os
@@ -11,7 +10,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
