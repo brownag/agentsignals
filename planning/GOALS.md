@@ -1,50 +1,52 @@
 # Project Goals (`planning/GOALS.md`)
 
 Last Updated: 2026-11-25
-Source State: STATE_10.md (G23 complete). Re-ranked 2026-11-25 with Magic Wand: G_opencode split into sub-goals; G_oc-spec done (SPEC §3.1 *Session sources* and *opencode source*, §4.1a). The opencode goals below form the next plan-wave set. G_llm-live is unchanged and user-run.
+Source State: STATE_11.md (orchestration 11, opencode source, complete). Re-ranked 2026-11-25 with Magic Wand after 312 `memory.md` files were overwritten with offline-template output by an instant `distill --force` (20:41). The offline fallback is gone (`2625fdc`). The new focus is keeping a history of the mined memories so that no write can silently destroy one.
 
-Intent: durable indexing of Claude session history from volatile `/tmp/claude-1000` before deletion, on Sway/Wayland, with systemd and Waybar included. Current focus: mining opencode sessions alongside Claude Code sessions (G_opencode).
+Intent: durable indexing of Claude Code and opencode session history from volatile sources before deletion, on Sway/Wayland, with systemd and Waybar included. Current focus: git history for `~/.claude-mined-memories` (G_memgit set).
 
 ## Circled Goal (Active)
 
-The plan-wave set is G_oc-seam, G_oc-fixture, G_oc-read, G_oc-guard and G_oc-cli. G_oc-seam and G_oc-fixture are roots and do not depend on each other, so they can run in parallel in the first wave.
+The plan-wave set is G_dossier-stable, G_churn, G_mem-git and G_mem-baseline. G_dossier-stable and G_churn are roots and do not depend on each other, so they can run in parallel in the first wave. User decisions (2026-11-25): history is on by default, with one commit per scan pass or distill run that changed files, and forced re-distills are committed too.
 
-- **[G_oc-seam]** `miner.py` is a core that doesn't care where a session came from, plus a `claudalizer/sources/claude_code.py` adapter behind the `SessionSource` protocol (SPEC §3.1 *Session sources*), with no change in behaviour.
-  - Why now: G_oc-read and G_oc-cli need the adapter slot to exist. This is the riskiest step for existing behaviour, so it lands first, on its own.
-  - Exit criteria: every existing test in `tests/` passes without edits. `SessionDossier` gains `source`, `touched_files` and `source_meta`, each with a default. `EXIT_CODE_PATTERN` becomes `r"Exit code:? (\d+)"`. `make check` passes.
-  - First action: add `claudalizer/sources/__init__.py` with `SessionRef`, `Extraction` and `SessionSource`, then move discovery and extraction out of `SessionMiner.scan_and_mine` and `_mine_session`.
-  - Depends on: G_oc-spec (done).
-- **[G_oc-fixture]** `tests/opencode_fixture.py` builds an opencode v2.4.1-shaped database in `tmp_path`, using the tables and columns in SPEC §3.1 plus a `migration` row. It has helpers for sessions, messages (with inline content) and part rows.
-  - Why now: G_oc-read and G_oc-guard are tested against it.
-  - Exit criteria: a self-test builds a family (a root and one child) with inline and part-row tool items, then reads it back with stdlib `sqlite3`. No test touches `~/.local/share/opencode`.
-  - First action: write the `CREATE TABLE` statements from SPEC §3.1's table, with the column names checked against the live schema using `pragma table_info` (read-only).
-  - Depends on: G_oc-spec (done).
+- **[G_dossier-stable]** Re-mining a session whose content has not changed leaves `dossier.json` byte-identical. A changed scan time is not a content change.
+  - Why now: every re-mine rewrites `dossier.json` because `scan_timestamp` changes, so git would see a change on every tick.
+  - Exit criteria: mining an unchanged session twice gives the same bytes and the same mtime. `distiller.py` still orders `PROJECT_MEMORY.md` sections by scan time (keep the first-mined time, or record the time only on a content change). `make check` passes.
+  - First action: in `_mine_ref`, compare the new dossier without `scan_timestamp` against the existing one and skip the write when they are equal.
+- **[G_churn]** A session that writes in bursts is re-mined once it settles, not on every 3 s watch tick.
+  - Why now: on 2026-11-25 the watcher re-mined 177 dossiers in one hour, mostly the same live sessions. Without this, G_mem-git records a commit every few seconds for each live session.
+  - Exit criteria: a test session written every 1 s for 10 s is mined at most once after it goes quiet. The settle window and watch interval are not changed without asking (AGENTS.md *Ask First*).
+  - First action: confirm from the journal and the settle code why a 2 s settle window with a 3 s interval re-mines active sessions, and propose a rule (for example, the scratchpad and transcript must both be quiet).
+  - Was Deferred (observed 2026-11-24); promoted because G_mem-git depends on it.
+- **[G_mem-git]** `~/.claude-mined-memories` is a git repository. Every scan pass or distill run that changes files makes exactly one commit, whose message names each session touched and why (mined, re-mined, distilled, `--force`). A pass that changes nothing makes no commit.
+  - Why now: every later step that rewrites memory files (G_llm-live's 9.5 h `--force` run, G_memory-fresh) becomes reversible.
+  - Exit criteria: on by default for `scan`, `distill` and `watch`; `--no-git` turns it off. Commits happen under `/tmp/claudalizer.lock` (`distill` takes no lock today, so it must start to). A missing `git` binary logs one warning and mining continues. A `--force` overwrite is undone with `git checkout <rev> -- <path>`. Tests use a repo in `tmp_path` only. Runtime stays stdlib-only (`subprocess` to `git`). `make check` passes.
+  - Components: new `claudalizer/memory_git.py`; `miner.py`, `distiller.py` and `cli.py` call it once per pass.
+  - Depends on: G_dossier-stable, G_churn.
+- **[G_mem-baseline]** The existing tree (566 MB, 42,984 files, 3 over 1 MB on 2026-11-25) is committed once as the baseline, including the 312 template files, so every later change has a parent.
+  - Exit criteria: a baseline commit exists. Repo size and `git add` time were measured on a copy first, and any `.gitignore` entries (for example large scratchpad copies) are recorded with the reason. Initialising the real root is ask-first.
+  - First action: measure `git init` and `git add -A` on a copy of the tree in the scratchpad.
+  - Depends on: G_mem-git.
 
 ## Sequenced Goals (Dependency DAG)
 
-- **[G_oc-read]** `claudalizer/sources/opencode.py` finds families, works out whether they are settled and changed, and extracts prompts, tool errors, failed shells, failed turns and touched files, as SPEC §3.1 *opencode source* says.
-  - Exit criteria: the "Fixture and reader" tests in SPEC §4.1a pass; `make check` passes.
-  - Depends on: G_oc-seam, G_oc-fixture.
-- **[G_oc-guard]** The schema guard and error handling work: missing columns skip the source with a warning, an unknown migration warns once and keeps reading, a missing database is silent, and a corrupt database doesn't stop the scan. The database is opened read-only.
-  - Exit criteria: the "Guard" tests in SPEC §4.1a pass.
-  - Depends on: G_oc-fixture, G_oc-read (the guard wraps the reader's open).
-- **[G_oc-cli]** `--source` and `--opencode-db` work on `scan`, `watch` and the systemd watch unit (both sources on by default). `watch` skips the opencode queries when the database and `-wal` mtimes are unchanged. README, AGENTS.md and SPEC §3.4 match.
-  - Exit criteria: the "CLI and integration" tests in SPEC §4.1a pass; `make check` passes; `make systemd-dry-run` output is reviewed (installing is ask-first).
-  - Depends on: G_oc-read, G_oc-guard.
-- **[G_oc-live]** One `claudalizer scan --no-debounce` against the real `opencode.db` writes opencode dossiers. Then `claudalizer distill` puts opencode sessions and Claude Code sessions into one `PROJECT_MEMORY.md` for a shared repo (for example `-home-andrew-AI-claudalizer`).
-  - Exit criteria: the database's mtime is unchanged after the scan; at least one `PROJECT_MEMORY.md` has sections from both sources.
-  - Depends on: G_oc-cli. Running `watch` long-term on live data is ask-first.
+- **[G_distill-report]** `distill` reports sessions it wrote, skipped (memory already exists) and failed (LLM error) separately, and never lists a skipped file as "Generated".
+  - Today `distill_session` returns the existing path when `memory.md` exists and `force` is off, and `handle_distill` prints it as generated.
+  - Depends on: none.
+- **[G_distill-offloop]** LLM distillation runs outside the watch loop, from a queue drained in the background, so mining is not blocked for about 108 s per session.
+  - Depends on: none.
+- **[G_memory-fresh]** A session's `memory.md` is re-distilled when its dossier content changes, instead of staying at its first version. Each version is kept in git.
+  - Depends on: G_mem-git, G_distill-offloop, G_dossier-stable.
+- **[G_llm-live]** All `memory.md` files under `~/.claude-mined-memories/` are LLM-written, with a title and an `Objective:` line, replacing the template output.
+  - Measured 2026-11-25: about 108 s per session with `qwen3.8-flash` on `localhost:8090`, so about 9.5 h for 316 sessions. The watch unit's drop-in (`claudalizer-watch.service.d/llm.conf`) already sets the endpoint.
+  - First action: after G_mem-baseline, run `CLAUDALIZER_LLM_ENDPOINT=http://localhost:8090/v1/chat/completions claudalizer distill --force` in the background (user-approved run).
+  - Depends on: G_mem-baseline, G_distill-report.
+- **[G_restore-cli]** `claudalizer history <slug>/<session>` lists a memory's versions, and `--restore <rev>` brings one back without raw git commands.
+  - Depends on: G_mem-git.
 
 ## Independent Backlog
 
-_(none.)_
-
-## Blocked / External Watch
-
-- **[G_llm-live]** `CLAUDALIZER_LLM_ENDPOINT=http://localhost:8090/v1/chat/completions claudalizer distill --force` writes memory blocks with a title and an Objective line from real data.
-  - Status: User-run. The code is done (G_memlab, G_memlab-open, G10).
-  - Exit criteria: the `memory.md` files under `~/.claude-mined-memories/` have LLM-written blocks, each with a title and an `Objective:` line.
-  - First action: you start the local LLM endpoint, then run the command above. Running it after G_oc-live also covers opencode dossiers.
+- **[G_mirror-filter]** Scratchpad snapshots do not copy nested memory roots or claudalizer test output into the memories root. On 2026-11-25 a scratchpad test copy (`memtest/`) and an earlier `verify/` run were mirrored as if they were memories.
 
 ## Deferred
 
@@ -52,16 +54,19 @@ _(none.)_
   - Trigger: you need to write notes by hand that must persist. Today a rebuild discards hand edits (G18, by design). The likely shape is a separate durable file that the distiller reads, not an edit to PROJECT_MEMORY.md.
 - **[G13]** Extract history from `/tmp/claude-1000/bash-edit-diff/` (bare git repositories whose objects hold earlier versions of edited files). Needs a new extractor; a slug-filter change alone captures nothing.
   - Trigger: you want that history mined.
-- **[G_churn]** A session that writes in bursts is re-mined once it settles, not on every watch tick.
-  - Observed 2026-11-24: the 2 s settle window is shorter than the 3 s watch interval, so an active session (a background task writing output) is re-mined about every 3 s, never shows as Active, and pushes up Waybar's total-mined count. Harmless; changing the settle window is ask-first.
-  - Trigger: the total-mined count or the CPU and I/O from re-mining become a problem.
-
 - **[G_sanitize]** Distillation of opencode sessions uses `opencode session export --sanitize` output instead of raw rows.
   - Trigger: concern about what opencode content reaches the LLM. How its redaction works has not been read (research, Open questions).
 - **[G_oc-worktree]** Sessions in opencode-managed worktrees (`~/.local/share/opencode/worktree/...`) are filed under their project's main checkout slug.
   - Trigger: worktree slugs fragment project memory. Today they get their own slug, as Claude Code worktrees do (SPEC §3.1).
 
 ## Done
+
+- **[G_no-offline]** Distillation has no offline fallback. Without an endpoint, or when the LLM returns nothing, no memory file is written and existing ones are kept.
+  - Status: Done (2026-11-25). `2625fdc`, SPEC `2f0f1e1`. `distill` exits 2 without an endpoint; `watch` and `scan` warn and only mine. `make check` 141 passed. The watch service was restarted on the new code at 20:57.
+- **[G_oc-seam] [G_oc-fixture] [G_oc-read] [G_oc-guard] [G_oc-cli]** opencode session source.
+  - Status: Done (2026-11-25, orchestration 11, `planning/STATE_11.md`). `make check` 144 passed at the end of the orchestration.
+- **[G_oc-live]** opencode dossiers are mined from the live database and share `PROJECT_MEMORY.md` folders with Claude Code sessions.
+  - Status: Done (2026-11-25). 128 opencode dossiers exist; for example `-home-andrew-AI-hyd-rs` has 9 opencode and 23 Claude Code sessions. The database mtime check was not recorded.
 
 - **[G_oc-spec]** SPEC states the opencode source: the protocol, the settle and change marker, the field mapping, the subagent fold, the schema guard, and the tests.
   - Status: Done (2026-11-25). SPEC §3.1 *Session sources* and *opencode source*, §3.4 global flags, §4.1a test list. The rules were checked read-only against the live database: one level of subagent nesting and no orphans; the marker query took about 20 ms warm; edits go through the `patch` tool (`patchText`); `snapshot.files` holds relative paths.
