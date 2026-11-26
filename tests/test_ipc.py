@@ -116,8 +116,8 @@ def test_waybar_refresh_failure_is_silent(monkeypatch, tmp_path):
 
 
 def test_default_status_file_is_redirected_in_tests():
-    # The autouse fixture points the default at tmp_path, never at /tmp/claudalizer_status.json.
-    assert ipc.DEFAULT_STATUS_FILE != Path("/tmp/claudalizer_status.json")
+    # The autouse fixture points the default at tmp_path, never at /tmp/agentsignals_status.json.
+    assert ipc.DEFAULT_STATUS_FILE != Path("/tmp/agentsignals_status.json")
 
 
 def test_scan_history_totals_reload_and_retention(tmp_path):

@@ -125,7 +125,7 @@ def test_generated_exec_decodes_to_status_fallback(tmp_path):
     patch_waybar_config(cfg)
 
     exec_cmd = _parse(cfg.read_text(encoding="utf-8"))["custom/agent-signals"]["exec"]
-    assert exec_cmd.startswith("cat /tmp/claudalizer_status.json")
+    assert exec_cmd.startswith("cat /tmp/agentsignals_status.json")
     assert "🧠" in exec_cmd
     assert '{"text":"🧠"}' in exec_cmd.replace("\\", "")
 

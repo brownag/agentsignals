@@ -1,13 +1,10 @@
 # AgentSignals
 
-The package is `agent-signals` (`agentsignals` in Python), with the `agent-signals`
-command. The old `claudalizer` command and `CLAUDALIZER_LLM_ENDPOINT` /
-`CLAUDALIZER_LLM_MODEL` variables remain deprecated compatibility aliases; the
-corresponding `AGENTSIGNALS_LLM_ENDPOINT` and `AGENTSIGNALS_LLM_MODEL` variables
-take precedence when both are set. Existing Claude-specific session and memory
-paths, including `/tmp/claude-1000` and `~/.claude-mined-memories`, are unchanged.
-
 Lightweight, zero-maintenance background daemon and CLI toolkit designed to monitor `/tmp/claude-1000/` (and related ephemeral session folders), intercept volatile Claude Code scratchpads and conversation transcripts before they are wiped, separate Git-discernable state from behavioral signals, and distill actionable memory rules for future agent workflows.
+
+The package is `agent-signals` (`agentsignals` in Python), with the `agent-signals`
+command. Session and memory paths, including `/tmp/claude-1000` and
+`~/.claude-mined-memories`, are unchanged.
 
 ---
 
@@ -30,7 +27,7 @@ Lightweight, zero-maintenance background daemon and CLI toolkit designed to moni
 3. **IPC & Window Manager Integration:**
    - Desktop notifications via `notify-send`.
    - Wayland compositor hooks refresh Waybar without an extra desktop popup.
-   - Waybar custom JSON status module output at `/tmp/claudalizer_status.json` (kept for compatibility).
+   - Waybar custom JSON status module output at `/tmp/agentsignals_status.json` (kept for compatibility).
 
 4. **Zero Heavyweight Dependencies:**
    - Implemented using Python 3 standard library (`json`, `urllib`, `pathlib`, `fcntl`, `subprocess`).
@@ -81,7 +78,7 @@ agent-signals watch --interval 5.0
 agent-signals watch --interval 5.0 --notify --history-limit 0
 ```
 
-Notifications are off by default for both `scan` and `watch`. With `--notify`, each scan that mines at least one session sends one aggregate desktop notification; scans that mine nothing send none. Watch automatically distills mined sessions when an LLM endpoint is set (`--llm-endpoint`, `AGENTSIGNALS_LLM_ENDPOINT`, or the deprecated `CLAUDALIZER_LLM_ENDPOINT`); without one it logs a warning and only mines. Pass `--no-auto-distill` to turn distillation off. The supplied systemd watch unit runs `agent-signals watch` without `--notify`.
+Notifications are off by default for both `scan` and `watch`. With `--notify`, each scan that mines at least one session sends one aggregate desktop notification; scans that mine nothing send none. Watch automatically distills mined sessions when an LLM endpoint is set (`--llm-endpoint`, or `AGENTSIGNALS_LLM_ENDPOINT`); without one it logs a warning and only mines. Pass `--no-auto-distill` to turn distillation off. The supplied systemd watch unit runs `agent-signals watch` without `--notify`.
 
 Both commands accept a non-negative `--history-limit`, defaulting to 50 recent scans. A limit of 0 removes individual history records while retaining the latest scan and cumulative totals. To use a different memories root, put the global option before the command, for example `agent-signals --memories-root /path/to/memories scan --history-limit 100`.
 
@@ -95,7 +92,7 @@ agent-signals install-systemd
 
 # Enable and start the watch daemon
 systemctl --user daemon-reload
-systemctl --user enable --now claudalizer-watch.service
+systemctl --user enable --now agentsignals-watch.service
 ```
 
 ---
@@ -134,14 +131,14 @@ Add a custom module in `~/.config/waybar/config`:
 "custom/agent-signals": {
     "format": "{}",
     "return-type": "json",
-    "exec": "cat /tmp/claudalizer_status.json 2>/dev/null || echo '{\"text\":\"🧠\"}'",
+    "exec": "cat /tmp/agentsignals_status.json 2>/dev/null || echo '{\"text\":\"🧠\"}'",
     "interval": 3,
     "signal": 8,
     "tooltip": true
 }
 ```
 
-Claudalizer sends `pkill -RTMIN+8 waybar` after each status write, so the module refreshes immediately. Polling every `interval` seconds remains the fallback.
+The watcher sends `pkill -RTMIN+8 waybar` after each status write, so the module refreshes immediately. Polling every `interval` seconds remains the fallback.
 
 The module text uses a stable `🧠 active | total mined` layout (for example, `🧠 1 | 42`); the first number is sessions still changing, and the second is the cumulative number mined. Hover for labeled counts, the latest scan time, last project (when available), cumulative totals, and up to three recent scans that mined sessions. Empty scans are omitted from that history.
 

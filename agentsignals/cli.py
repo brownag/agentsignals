@@ -50,7 +50,7 @@ def _write_mined_status(args, miner, dossiers):
 
 def _notify_batch(dossiers) -> None:
     if dossiers:
-        send_notification("Claudalizer", f"Mined {len(dossiers)} session(s).")
+        send_notification("AgentSignals", f"Mined {len(dossiers)} session(s).")
 
 
 def _non_negative_int(value: str) -> int:
@@ -61,22 +61,18 @@ def _non_negative_int(value: str) -> int:
 
 
 def resolve_llm_settings(args: argparse.Namespace) -> Tuple[Optional[str], str]:
-    """Resolve settings, preferring new names over deprecated aliases.
+    """Resolve settings, reading the environment variables.
 
     --llm-model defaults to "llama3". That default counts as not given.
     """
     endpoint = (
         getattr(args, "llm_endpoint", None)
         or os.environ.get("AGENTSIGNALS_LLM_ENDPOINT")
-        or os.environ.get("CLAUDALIZER_LLM_ENDPOINT")
         or None
     )
     model = getattr(args, "llm_model", None) or "llama3"
     if model == "llama3":
-        model = (
-            os.environ.get("AGENTSIGNALS_LLM_MODEL")
-            or os.environ.get("CLAUDALIZER_LLM_MODEL", "local")
-        )
+        model = os.environ.get("AGENTSIGNALS_LLM_MODEL", "local")
     return endpoint, model
 
 
@@ -147,7 +143,7 @@ def handle_scan(args: argparse.Namespace) -> int:
     print(format_skip_summary(miner.skipped))
 
     if args.auto_distill and dossiers and not resolve_llm_settings(args)[0]:
-        logger.warning("No LLM endpoint set (--llm-endpoint, AGENTSIGNALS_LLM_ENDPOINT, or deprecated CLAUDALIZER_LLM_ENDPOINT); memories are not distilled.")
+        logger.warning("No LLM endpoint set (--llm-endpoint, AGENTSIGNALS_LLM_ENDPOINT, or AGENTSIGNALS_LLM_ENDPOINT); memories are not distilled.")
     elif args.auto_distill and dossiers:
         logger.info("Running automatic distillation on mined sessions...")
         distiller = MemoryDistiller(memories_root=Path(args.memories_root), repo=build_repo(args),
@@ -167,7 +163,7 @@ def handle_scan(args: argparse.Namespace) -> int:
 
 def handle_distill(args: argparse.Namespace) -> int:
     if not resolve_llm_settings(args)[0]:
-        logger.error("No LLM endpoint set (--llm-endpoint, AGENTSIGNALS_LLM_ENDPOINT, or deprecated CLAUDALIZER_LLM_ENDPOINT); memories are not distilled.")
+        logger.error("No LLM endpoint set (--llm-endpoint, AGENTSIGNALS_LLM_ENDPOINT, or AGENTSIGNALS_LLM_ENDPOINT); memories are not distilled.")
         return 2
     distiller = MemoryDistiller(memories_root=Path(args.memories_root), repo=build_repo(args),
                                 lock_file=Path(args.lock_file))
@@ -207,7 +203,7 @@ def handle_watch(args: argparse.Namespace) -> int:
         if args.auto_distill else None
     )
     if distiller and not resolve_llm_settings(args)[0]:
-        logger.warning("No LLM endpoint set (--llm-endpoint, AGENTSIGNALS_LLM_ENDPOINT, or deprecated CLAUDALIZER_LLM_ENDPOINT); memories are not distilled.")
+        logger.warning("No LLM endpoint set (--llm-endpoint, AGENTSIGNALS_LLM_ENDPOINT, or AGENTSIGNALS_LLM_ENDPOINT); memories are not distilled.")
         distiller = None
 
     latest_state = None
@@ -249,9 +245,9 @@ def handle_install_systemd(args: argparse.Namespace) -> int:
         which_bin = str(Path.home() / ".local" / "bin" / "agent-signals")
 
     systemd_src_dir = Path(__file__).resolve().parent.parent / "systemd"
-    service_src = systemd_src_dir / "claudalizer.service"
-    watch_src = systemd_src_dir / "claudalizer-watch.service"
-    tmpfiles_src = systemd_src_dir / "claudalizer-tmpfiles.conf"
+    service_src = systemd_src_dir / "agentsignals.service"
+    watch_src = systemd_src_dir / "agentsignals-watch.service"
+    tmpfiles_src = systemd_src_dir / "agentsignals-tmpfiles.conf"
 
     # Destination directories
     user_systemd_dir = Path.home() / ".config" / "systemd" / "user"
@@ -261,19 +257,19 @@ def handle_install_systemd(args: argparse.Namespace) -> int:
     service_content = service_src.read_text(encoding="utf-8")
     # Replace executable if needed
     service_content = service_content.replace("%h/.local/bin/agent-signals", which_bin)
-    service_content = service_content.replace("%h/.local/bin/claudalizer", which_bin)
+    service_content = service_content.replace("%h/.local/bin/agentsignals", which_bin)
 
     watch_content = watch_src.read_text(encoding="utf-8").replace("%h/.local/bin/agent-signals", which_bin)
-    watch_content = watch_content.replace("%h/.local/bin/claudalizer", which_bin)
+    watch_content = watch_content.replace("%h/.local/bin/agentsignals", which_bin)
     tmpfiles_content = tmpfiles_src.read_text(encoding="utf-8")
 
     if args.dry_run:
         print("=== DRY RUN: Systemd Unit Configurations ===")
-        print(f"\n--- [{user_systemd_dir / 'claudalizer.service'}] ---")
+        print(f"\n--- [{user_systemd_dir / 'agentsignals.service'}] ---")
         print(service_content.strip())
-        print(f"\n--- [{user_systemd_dir / 'claudalizer-watch.service'}] ---")
+        print(f"\n--- [{user_systemd_dir / 'agentsignals-watch.service'}] ---")
         print(watch_content.strip())
-        print(f"\n--- [{user_tmpfiles_dir / 'claudalizer.conf'}] ---")
+        print(f"\n--- [{user_tmpfiles_dir / 'agentsignals.conf'}] ---")
         print(tmpfiles_content.strip())
         waybar_path = find_waybar_config()
         waybar_state = patch_waybar_config(waybar_path, dry_run=True)
@@ -285,9 +281,9 @@ def handle_install_systemd(args: argparse.Namespace) -> int:
     user_systemd_dir.mkdir(parents=True, exist_ok=True)
     user_tmpfiles_dir.mkdir(parents=True, exist_ok=True)
 
-    dest_service = user_systemd_dir / "claudalizer.service"
-    dest_watch = user_systemd_dir / "claudalizer-watch.service"
-    dest_tmpfiles = user_tmpfiles_dir / "claudalizer.conf"
+    dest_service = user_systemd_dir / "agentsignals.service"
+    dest_watch = user_systemd_dir / "agentsignals-watch.service"
+    dest_tmpfiles = user_tmpfiles_dir / "agentsignals.conf"
 
     dest_service.write_text(service_content, encoding="utf-8")
     dest_watch.write_text(watch_content, encoding="utf-8")
@@ -299,7 +295,7 @@ def handle_install_systemd(args: argparse.Namespace) -> int:
     print(f"  • {dest_tmpfiles}")
     print("\nTo activate now, run:")
     print("  systemctl --user daemon-reload")
-    print("  systemctl --user enable --now claudalizer-watch.service")
+    print("  systemctl --user enable --now agentsignals-watch.service")
 
     waybar_path = find_waybar_config()
     waybar_state = patch_waybar_config(waybar_path)
@@ -384,20 +380,6 @@ def main(argv: Optional[list] = None) -> int:
     return 0
 
 
-def legacy_main(argv: Optional[list] = None) -> int:
-    """Deprecated `claudalizer` entry point."""
-    if argv is None:
-        argv = sys.argv[1:]
-    parser = build_parser()
-    parser.prog = "claudalizer (deprecated; use agent-signals)"
-    args = parser.parse_args(argv)
-    setup_logging(args.verbose)
-    return {
-        "scan": handle_scan,
-        "distill": handle_distill,
-        "watch": handle_watch,
-        "install-systemd": handle_install_systemd,
-    }[args.command](args)
 
 
 if __name__ == "__main__":

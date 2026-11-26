@@ -5,9 +5,7 @@ PIP    ?= pip
 WATCH_INTERVAL ?= 3.0
 
 SYSTEMD_USER_DIR := $(HOME)/.config/systemd/user
-SYSTEMD_UNITS    := claudalizer-watch.service
-# Legacy path unit: removed from install; listed here only so uninstall cleans up old installs.
-LEGACY_UNITS     := claudalizer.path
+SYSTEMD_UNITS    := agentsignals-watch.service
 
 .PHONY: help install install-user test test-cov lint check clean build scan distill watch systemd-dry-run systemd-install systemd-status systemd-uninstall
 
@@ -54,12 +52,12 @@ systemd-dry-run: ## Preview systemd unit installation
 systemd-install: ## Install units, then enable the watch service
 	$(PYTHON) -m agentsignals.cli install-systemd
 	systemctl --user daemon-reload
-	systemctl --user enable --now claudalizer-watch.service
+	systemctl --user enable --now agentsignals-watch.service
 
 systemd-status: ## Show status of the agent-signals watch unit
 	@systemctl --user status $(SYSTEMD_UNITS) --no-pager || true
 
 systemd-uninstall: ## Disable and remove the agent-signals user units
-	-systemctl --user disable --now $(SYSTEMD_UNITS) $(LEGACY_UNITS)
-	rm -f $(addprefix $(SYSTEMD_USER_DIR)/,$(SYSTEMD_UNITS) $(LEGACY_UNITS) claudalizer.service)
+	-systemctl --user disable --now $(SYSTEMD_UNITS)
+	rm -f $(addprefix $(SYSTEMD_USER_DIR)/,$(SYSTEMD_UNITS))
 	systemctl --user daemon-reload

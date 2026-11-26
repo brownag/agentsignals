@@ -251,23 +251,14 @@ def test_no_git_flag_disables_repo(tmp_path):
     assert cli.build_repo(parser.parse_args(["--memories-root", root, "--no-git", "scan"])).enabled is False
 
 
-def test_new_environment_variables_precede_legacy_aliases(monkeypatch):
+def test_llm_environment_variables_are_read(monkeypatch):
     monkeypatch.setenv("AGENTSIGNALS_LLM_ENDPOINT", "https://new.example")
-    monkeypatch.setenv("CLAUDALIZER_LLM_ENDPOINT", "https://old.example")
     monkeypatch.setenv("AGENTSIGNALS_LLM_MODEL", "new-model")
-    monkeypatch.setenv("CLAUDALIZER_LLM_MODEL", "old-model")
 
     endpoint, model = cli.resolve_llm_settings(SimpleNamespace(llm_endpoint=None, llm_model="llama3"))
     assert endpoint == "https://new.example"
     assert model == "new-model"
 
-
-def test_legacy_cli_entrypoint_uses_deprecation_program_name(monkeypatch):
-    called = []
-    monkeypatch.setattr(cli, "handle_scan", lambda args: called.append(args.command) or 0)
-
-    assert cli.legacy_main(["scan"]) == 0
-    assert called == ["scan"]
 
 
 def test_watch_passes_repo_and_min_remine(tmp_path, monkeypatch):
