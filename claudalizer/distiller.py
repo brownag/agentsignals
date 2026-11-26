@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import re
 import tempfile
 import urllib.error
 import urllib.request
@@ -12,15 +13,6 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 DEFAULT_MEMORIES_ROOT = Path.home() / ".claude-mined-memories"
-
-# Scratch folders created by the claudalizer's own test runs. Excluded from blind-alleys (G20).
-TEST_RUN_SCRATCH_ROOTS = ("g3-accept", "rewrite-check")
-
-# A friction line shows the first output line containing one of these; entries with none are dropped (G21).
-ERROR_MARKERS = (
-    "FAILED", "Error", "error:", "error[", "Traceback", "panicked",
-    "Exception", "command not found", "No such file",
-)
 
 DISTILLATION_SYSTEM_PROMPT = """You are a software engineering memory synthesizer.
 Your task is to analyze raw debugging sessions, tool friction, command failures, discarded spikes, and scratchpad scripts from an AI coding agent.
@@ -137,7 +129,7 @@ def call_llm_completion(
         logger.warning(f"LLM call to {endpoint} failed: {e}")
         return None
 
-    logger.warning(f"LLM endpoint {endpoint} returned no content; using offline block.")
+    logger.warning(f"LLM endpoint {endpoint} returned no content; no memory written.")
     return None
 
 
@@ -145,10 +137,29 @@ OBJECTIVE_MAX_CHARS = 300
 OBJECTIVE_MIN_PROMPT_CHARS = 15  # same threshold as the miner's MIN_PROMPT_LENGTH
 
 
+_COMMAND_NAME_RE = re.compile(r"<command-name>\s*(.*?)\s*</command-name>", re.S)
+_COMMAND_ARGS_RE = re.compile(r"<command-args>\s*(.*?)\s*</command-args>", re.S)
+
+
+def _unwrap_command(prompt: str) -> str:
+    """Turn a Claude Code slash-command wrapper into "/name args"; other prompts are returned as is.
+
+    A command with no arguments (/clear, /model) becomes "", so it is never the objective.
+    """
+    name = _COMMAND_NAME_RE.search(prompt)
+    if not name:
+        return prompt
+    args = _COMMAND_ARGS_RE.search(prompt)
+    args_text = args.group(1) if args else ""
+    if not args_text:
+        return ""
+    return f"{name.group(1)} {args_text}"
+
+
 def _session_objective(prompts: List[str]) -> str:
     """First real request of the session, one line, truncated. The session's purpose in the memory block."""
     for prompt in prompts or []:
-        stripped = str(prompt).strip()
+        stripped = _unwrap_command(str(prompt).strip()).strip()
         if len(stripped) < OBJECTIVE_MIN_PROMPT_CHARS:
             continue
         text = " ".join(stripped.split())
@@ -159,7 +170,7 @@ def _session_objective(prompts: List[str]) -> str:
 
 
 def frame_llm_block(dossier_data: Dict[str, Any], llm_text: str) -> str:
-    """Put the same title, source, and objective lines on an LLM block as on an offline block.
+    """Put a title, source, and objective line on top of the LLM's three sections.
 
     The model writes the three sections only. If it already wrote a title, the text is kept as is.
     """
@@ -177,82 +188,6 @@ def frame_llm_block(dossier_data: Dict[str, Any], llm_text: str) -> str:
     ])
 
 
-def synthesize_offline_memory_block(dossier_data: Dict[str, Any]) -> str:
-    """Generate structured markdown memory block deterministically offline without LLM."""
-    errors = dossier_data.get("tool_errors", [])
-    scratchpads = dossier_data.get("scratchpad_files", [])
-    slug = dossier_data.get("slug", "unknown")
-    decoded = dossier_data.get("decoded_path", slug)
-    objective = _session_objective(dossier_data.get("user_prompts", []))
-
-    lines = [
-        f"# Mined Behavioral Memory for `{slug}`",
-        f"**Source Directory:** `{decoded}`",
-        f"**Objective:** {objective}",
-        "",
-        "### 1. Tool / Skill Friction",
-    ]
-
-    friction_lines = []
-    seen_cmds = set()
-    for err in errors:
-        cmd = (err.get("command_or_input") or "").strip()
-        tool = err.get("tool_name") or "Tool"
-        error_line = next(
-            (
-                ln.strip()
-                for ln in (err.get("error_output") or "").split("\n")
-                if any(marker in ln for marker in ERROR_MARKERS)
-            ),
-            None,
-        )
-        if error_line is None:
-            continue
-
-        key = (tool, cmd)
-        if key in seen_cmds:
-            continue
-        seen_cmds.add(key)
-
-        friction_lines.append(f"- **{tool}** (`{cmd[:80]}`): {error_line[:200]}")
-
-    lines.extend(friction_lines or ["- None detected."])
-
-    lines.extend(["", "### 2. Blind Alleys & Discarded Spikes"])
-    kept_scratch = [s for s in scratchpads if s.split("/", 1)[0] not in TEST_RUN_SCRATCH_ROOTS]
-    if kept_scratch:
-        for s in kept_scratch:
-            lines.append(f"- Ephemeral scratchpad tested: `{s}`")
-    else:
-        lines.append("- No ephemeral scratchpads recorded.")
-
-    lines.extend([
-        "",
-        "### 3. Directives for CLAUDE.md",
-    ])
-
-    # Infer directives from errors
-    directives = []
-    for err in errors:
-        out = (err.get("error_output") or "")
-        cmd = (err.get("command_or_input") or "")
-        if "No such file or directory" in out and "python" in out:
-            directives.append("Verify Python virtualenv or conda environment path before executing Python scripts.")
-        elif "command not found" in out:
-            directives.append(f"Ensure system binaries and build prerequisites are installed before invoking `{cmd.split()[0] if cmd else 'tools'}`.")
-        elif "cargo" in cmd and "error" in out.lower():
-            directives.append("Check Cargo build flags and crate dependencies before running tests.")
-
-    if not directives:
-        directives.append("None detected.")
-
-    # Deduplicate directives
-    for d in sorted(set(directives)):
-        lines.append(f"- {d}")
-
-    return "\n".join(lines)
-
-
 class MemoryDistiller:
     """Ingests dossiers and distills actionable memory blocks."""
 
@@ -267,12 +202,19 @@ class MemoryDistiller:
         llm_model: str = "llama3",
         force: bool = False,
     ) -> Optional[Path]:
-        """Distill a single session dossier into memory.md."""
+        """Distill a single session dossier into memory.md with the LLM.
+
+        Without an endpoint, or when the LLM returns nothing, no file is written and an
+        existing memory.md is left as it is. There is no offline fallback.
+        """
         session_dir = self.memories_root / slug / session_id
         dossier_json = session_dir / "dossier.json"
         memory_md = session_dir / "memory.md"
 
         if not dossier_json.exists():
+            return None
+        if not llm_endpoint:
+            logger.debug(f"No LLM endpoint; not distilling {slug}/{session_id}.")
             return None
 
         if memory_md.exists() and not force:
@@ -282,16 +224,10 @@ class MemoryDistiller:
         with open(dossier_json, "r", encoding="utf-8") as f:
             dossier_data = json.load(f)
 
-        content: Optional[str] = None
-        if llm_endpoint:
-            prompt = build_synthesis_prompt(dossier_data)
-            content = call_llm_completion(prompt, endpoint=llm_endpoint, model=llm_model)
-            if content:
-                content = frame_llm_block(dossier_data, content)
-
+        content = call_llm_completion(build_synthesis_prompt(dossier_data), endpoint=llm_endpoint, model=llm_model)
         if not content:
-            # Fallback to offline deterministic synthesis
-            content = synthesize_offline_memory_block(dossier_data)
+            return None
+        content = frame_llm_block(dossier_data, content)
 
         with open(memory_md, "w", encoding="utf-8") as f:
             f.write(content + "\n")

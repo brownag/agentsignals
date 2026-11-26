@@ -19,10 +19,11 @@
 ## Find Things
 
 * `claudalizer/cli.py` - argparse entry point (`main`), subcommands `scan`, `distill`, `watch`, `install-systemd`
-* `claudalizer/miner.py` - session discovery, settle/debounce rules, transcript parsing, scratchpad snapshots, dossiers
+* `claudalizer/miner.py` - core scan loop, settle/debounce rules, transcript parsing, scratchpad snapshots, dossiers. It runs each enabled source in turn.
+* `claudalizer/sources/` - session adapters: `claude_code.py` (Claude Code), `opencode.py` (opencode SQLite reader), `opencode_schema.py` (schema guard and read-only open)
 * `claudalizer/distiller.py` - turns dossiers into `memory.md` and per-project `PROJECT_MEMORY.md`
 * `claudalizer/ipc.py` - desktop notifications (`notify-send`), Sway/Hyprland detection, Waybar signalling
-* `tests/` - pytest suite; `test_miner.py` holds all current tests
+* `tests/` - pytest suite. `test_miner.py` (Claude Code), `test_source_core.py` (core loop), `test_opencode_fixture.py`, `test_opencode_source.py`, `test_opencode_schema.py`. `opencode_fixture.py` builds test databases. `conftest.py` points `OPENCODE_DB` and `XDG_DATA_HOME` at missing paths so tests never read the live database.
 * `systemd/` - unit templates (`claudalizer.service`, `claudalizer-watch.service`) and the tmpfiles config. `%h/.local/bin/claudalizer` is replaced at install time.
 * `planning/` - goals and specs (`GOALS.md`, `SPEC.md`). Read `GOALS.md` for the current goal sequence.
 * `README.md` - user-facing usage, Waybar example, test instructions
@@ -37,6 +38,7 @@
 ## Infrastructure
 
 * **Session source (volatile)**: `/tmp/claude-1000` (`DEFAULT_TMP_ROOT` in `miner.py`). Layout: `<slug>/<session-id>/scratchpad/`. Directories whose names don't start with `-` are skipped (see `scan_and_mine`).
+* **opencode database (read-only)**: `--opencode-db`, else `$OPENCODE_DB`, else `$XDG_DATA_HOME/opencode/opencode.db` (default `~/.local/share/opencode/opencode.db`). Opened read-only; claudalizer never writes to it.
 * **Transcripts (durable)**: `~/.claude/projects/<slug>/<session-id>.jsonl`
 * **Mined output (durable)**: `~/.claude-mined-memories/` (`DEFAULT_MEMORIES_ROOT`). Per session: `dossier.json`, `scratchpad/` copy, `memory.md` after distillation. Per project: `PROJECT_MEMORY.md`.
 * **Lock file**: `/tmp/claudalizer.lock` (`DEFAULT_LOCK_FILE`). Mining takes an exclusive `flock` with a 10 s timeout.
@@ -52,7 +54,9 @@
 * `systemd.path` (`PathModified=/tmp/claude-1000`) does not fire on writes inside session subdirectories. The watch service is the path that catches nested scratchpad writes.
 * A session with an existing `dossier.json` is re-mined only when a file under its scratchpad is newer than that dossier. Otherwise it is skipped.
 * Sessions with no user prompts, no tool errors, and no scratchpad files produce no dossier.
-* `make lint` ends with `|| echo`, so it never fails the build. Read its output for ruff findings.
+* `make lint` fails on ruff findings. It only skips, printing "ruff not found, skipping.", when ruff is not installed.
+* An opencode session family is mined when it is idle, or after 600 s with no change (`OPENCODE_QUIET_SECONDS`).
+* `watch` skips the opencode queries on a tick only when the database and `-wal` mtimes are unchanged and the previous pass found no unsettled family.
 * `--notify` is off by default for `scan` and `watch`. `watch` distills by default; `--no-auto-distill` turns it off.
 
 ## System Boundaries & Operational Rules
@@ -68,6 +72,7 @@
 
 ### Never
 * Delete or modify contents under `/tmp/claude-1000` or `~/.claude-mined-memories/` directly; use the CLI.
+* Write to `opencode.db`.
 * Add runtime dependencies (the project is stdlib-only).
 
 ## Secondary Documentation Index

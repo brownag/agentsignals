@@ -4,7 +4,7 @@
 
 **Target Release:** claudalizer v0.2.0
 
-**Last Updated:** 2026-11-14 (removed the `claudalizer.path` unit; the watch service is the only trigger)
+**Last Updated:** 2026-11-25 (opencode session source, §3.1 and §4.1a; earlier: removed the `claudalizer.path` unit)
 
 **Role:** Authoritative implementation specification and review rubric for agent-drafted codebase.
 
@@ -43,7 +43,8 @@ Completed scans also update persistent scan state under the configured memories 
 `├── claudalizer/`  
 `│   ├── __init__.py          # Version constant (__version__ = "0.2.0")`  
 `│   ├── cli.py               # CLI entry points and command routing`  
-`│   ├── miner.py             # Scratchpad scanner, JSONL parser, and snapshot engine`  
+`│   ├── miner.py             # Source-neutral mining core: lock, settle, dossier writes`  
+`│   ├── sources/             # Session adapters: claude_code.py, opencode.py (G_opencode)`  
 `│   ├── distiller.py         # LLM prompt builder and OpenAI-compatible client`  
 `│   └── ipc.py               # Compositor auto-detection and window manager IPC hooks`  
 `├── systemd/`  
@@ -53,7 +54,7 @@ Completed scans also update persistent scan state under the configured memories 
 `└── tests/`  
     `├── conftest.py          # Shared fixtures (mock /tmp, mock transcripts, mock sockets)`  
     `├── test_miner.py        # Slug parsing, artifact discovery, JSONL extraction`  
-    `├── test_distiller.py    # Synthesis, offline fallback, PROJECT_MEMORY.md sections, xfail targets for G18–G21`  
+    `├── test_distiller.py    # Synthesis, no-fallback rule, PROJECT_MEMORY.md sections, xfail targets for G18–G21`  
     `└── test_ipc.py          # Compositor dispatch logic and command verification`
 
 ## **3\. Module Specifications**
@@ -124,6 +125,133 @@ The miner must write atomic JSON output to:
 
 Skipped files are not copied; each is listed in `skipped_files` with its reason (`oversized`, `binary`, or `unreadable`).
 
+#### **Session sources (G_opencode)**
+
+Mining is split into a core that doesn't care where a session came from, plus one adapter per session source. The core is `claudalizer/miner.py`; the adapters are `claudalizer/sources/claude_code.py` and `claudalizer/sources/opencode.py`. Facts about opencode come from `planning/research/OPENCODE_SESSIONS.md` (opencode v2.4.1, commit `6f05140`); section numbers below (R§N) refer to that file.
+
+The core owns the lock, the settle and up-to-date decisions, the skip accounting, scratchpad snapshots, the no-content rule, and the atomic `dossier.json` write. An adapter only finds sessions and extracts their signals. `distiller.py` does not change.
+
+Protocol (`claudalizer/sources/__init__.py`, stdlib `typing.Protocol` and dataclasses):
+
+```python
+@dataclass(frozen=True)
+class SessionRef:
+    source: str                 # "claude_code" | "opencode"
+    slug: str                   # memories-root folder name
+    session_id: str
+    decoded_path: Optional[str]
+    changed_at: float           # epoch seconds of the newest change to the session
+    settled: bool               # the adapter's own "finished" test passed
+
+@dataclass
+class Extraction:
+    user_prompts: List[str]
+    tool_errors: List[ToolErrorEvent]
+    scratchpad_dir: Optional[Path]   # None when the source has no scratchpad
+    touched_files: List[str]
+    transcript_found: bool
+    source_meta: Dict[str, Any]
+
+class SessionSource(Protocol):
+    name: str
+    def iter_sessions(self, target_slug: Optional[str]) -> Iterator[SessionRef]: ...
+    def extract(self, ref: SessionRef) -> Extraction: ...
+```
+
+Core loop, run once per scan under the one lock, for each enabled source in order (`claude_code`, then `opencode`):
+
+1. If debounce is on and `ref.settled` is false, record `<slug>/<session_id>` in `skipped["active"]` and skip it.
+2. If `dossier.json` exists, `force` is off, and `ref.changed_at <= dossier.json` mtime, count it in `skipped["up_to_date"]` and skip it.
+3. Call `extract`. If `scratchpad_dir` is set, snapshot it as before. Apply the no-content rule as before; `touched_files` alone does not count as content.
+4. Write the dossier atomically.
+
+An adapter that raises an exception in `iter_sessions` or `extract` is logged as a warning. The rest of that source is skipped for this scan, and the other sources still run. `watch` never exits because of a source error.
+
+Dossier changes (both sources): `source` (default `"claude_code"`), `touched_files` (default `[]`) and `source_meta` (default `{}`) are added to `SessionDossier`. Existing fields keep their meaning. The file is `dossier.json`; the `session_memory.json` name in the schema above is out of date.
+
+**Claude Code adapter.** This is today's behaviour, moved without change:
+
+- Discovery is the `tmp_root` walk in `scan_and_mine`, including the slug filters.
+- `settled = is_file_settled(session_dir, SETTLE_DEBOUNCE_SECONDS)`.
+- `changed_at` is the greater of the scratchpad's `newest_mtime` and the transcript mtime. With the core's `<=` test this is the same as today's `scratchpad_changed_since(...) or transcript newer` check.
+- `extract` calls `parse_transcript_events` and returns the scratchpad directory, `touched_files=[]` and `source_meta={}`.
+
+#### **opencode source**
+
+*Database.* The path is the `--opencode-db` flag, else `$OPENCODE_DB`, else `$XDG_DATA_HOME/opencode/opencode.db` (default `~/.local/share/opencode/opencode.db`). Databases for other release channels (`opencode-<channel>.db`, R§1) are not detected automatically; pass them with the flag.
+
+- Open with `sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)`. Never use `immutable=1`, because it ignores the WAL (R§7). The source never writes to the database.
+- Each statement is its own short read. There is no long-lived transaction; close the connection at the end of each scan.
+- If the database file is missing, the source yields nothing and logs at debug level only.
+
+*Schema guard*, run at each open before any other query:
+
+- Each table in the table below, and each column the adapter reads, must exist (`pragma table_info`). If any is missing, log one warning per process naming the missing items and skip the source.
+- `SELECT id FROM migration ORDER BY id DESC LIMIT 1` (an empty table counts as an unknown migration, recorded as `""`) is compared with `KNOWN_OPENCODE_MIGRATION = "20261120004954_machine-key"`. If the latest id sorts after it, log one warning per process and keep reading. Record the id in `source_meta.schema_migration`.
+- A `sqlite3.Error` at any point logs a warning and skips the source for this scan.
+- A row whose `data` is not valid JSON is skipped. Every JSON field is read with `.get`, because older part shapes exist (R§2, R§6).
+
+| Table | Columns read |
+|---|---|
+| `migration` | `id` |
+| `session_v2` | `id`, `parent_id`, `directory`, `project_id`, `version`, `time_created`, `time_updated`, `time_busy`, `time_idle`, `idle_outcome` |
+| `session_message` | `session_id`, `type`, `seq`, `time_updated`, `data` |
+| `session_part` | `session_id`, `message_id`, `ordinal`, `type`, `call_id`, `time_updated`, `data` |
+
+*Families (subagents).* A child session (`parent_id` set) is never mined on its own. It is folded into its root's dossier (decided 2026-11-24: mine all of it).
+
+- The root is found by following `parent_id` until it is null or names a missing row. A child whose parent row is missing becomes a root itself.
+- A loop or a depth over 64 stops the walk at the last row reached and logs a warning.
+- A family is the root plus every session whose root it is. On 2026-11-25 the live database had one level of nesting and no orphans, but the rule does not depend on that.
+
+*Discovery and change marker.* One query per scan computes each session's marker:
+
+`max(time_updated, time_idle, max(session_message.time_updated), max(session_part.time_updated))`
+
+using correlated subqueries on the `session_id` indexes. It took about 20 ms warm on the live 745-session database. `session_v2.time_updated` alone is not enough, because tool and part updates don't change it (R§4).
+
+- A family's `changed_at` is the largest marker in the family, divided by 1000 (opencode stores milliseconds).
+- `slug = re.sub(r"[^A-Za-z0-9]", "-", root.directory)`. This is Claude Code's rule (`/home/andrew/.claude-mined-memories` becomes `-home-andrew--claude-mined-memories`), so both sources in one repo share a slug and a `PROJECT_MEMORY.md`.
+- `decoded_path = root.directory`. `session_id` is the root's `ses_…` id, which cannot collide with a Claude Code UUID (R§1).
+- `target_slug` filters on the computed slug.
+
+*Settled.* A family is settled when either of these holds:
+
+- Every member has `time_idle IS NOT NULL AND time_idle >= coalesce(time_busy, 0)`, and `now - changed_at >= SETTLE_DEBOUNCE_SECONDS`.
+- Or `now - changed_at >= OPENCODE_QUIET_SECONDS` (600). A shutdown interruption sets no idle mark (R§4), so a family like that is still mined once it has been quiet this long.
+
+This changes only what the existing settle window is compared against; the window stays 2 s.
+
+*Watch pre-check.* `watch` keeps the mtimes of the database file and its `-wal` file from the previous tick. It skips the opencode queries for a tick only when neither mtime changed **and** the previous pass found no unsettled family. A busy or unmarked family settles with the passage of time, not with a database write, so it must keep being re-checked until it is mined. `scan` always queries.
+
+*Extraction*, per family member, ordered by member `time_created` with the root first:
+
+- **Messages:** `SELECT type, seq, data FROM session_message WHERE session_id=? ORDER BY seq`. **Parts:** `SELECT message_id, ordinal, type, call_id, data FROM session_part WHERE session_id=? ORDER BY message_id, ordinal`.
+- **Content of an assistant message:** its part rows in `ordinal` order, then the inline `data.content` items. This is the same order as opencode's `withParts` (R§2). A part item is its `data` object, with `type` taken from the column when `data` lacks it, and `id` taken from `call_id` when `data` lacks it.
+- **`user_prompts`:** `type='user'` messages, `data.text` stripped. Keep it when it is at least `MIN_PROMPT_LENGTH` characters long. `synthetic`, `system`, `skill` and `compaction` messages are excluded. The root's prompts come first, then each child's.
+- **`tool_errors`:** one `ToolErrorEvent` for each content item with `type == "tool"` that matches one of these cases:
+  - `state.status == "error"`: `error_output = f"{error.type} error: {error.message}"`. The `error:` marker lets the distiller's friction rule keep the line.
+  - `name == "shell"` with `state.status == "completed"` and a non-zero `state.metadata.exit`, or `signal` or `timeout` set: `exit_code = metadata.exit`, and `error_output` is the text items of `state.content` joined by newlines. Add `Exit code: N` when the text does not already contain it.
+  - A shell item with no `metadata.exit` falls back to matching its text against `EXIT_CODE_PATTERN`. The pattern becomes `r"Exit code:? (\d+)"`, which matches both sources.
+
+  The other fields for these items:
+  - `tool_use_id` is the item's `id`, and `tool_name` is its `name`.
+  - `command_or_input` is the first of `state.input.command`, `state.input.filePath`, the first line of `state.input.patchText`, or `json.dumps(state.input, sort_keys=True)`. It is cut to 500 characters.
+  - `timestamp` is ISO-8601 UTC from `time.completed`, else `time.created`.
+
+  The same `is_git_discernable` filter as transcripts is applied.
+- **Turn failures:** an `idle` message with `outcome == "failed"` adds a `ToolErrorEvent` with `tool_name="session"` and `error_output = f"turn error: {error.message}"`.
+- **`touched_files`:** the sorted, de-duplicated union of three sets, capped at 500 entries. Relative paths are joined to the member's `directory`. No file content is copied; copying from the snapshot store would be the G13 problem.
+  - `snapshot.files[]` from each assistant message
+  - `state.input.filePath` of `edit` and `write` calls
+  - the paths on `*** (Add|Update|Delete) File: <path>` lines of `patch` calls
+- **`scratchpad_dir = None`.** `transcript_found = True`.
+- **`source_meta`:** `project_id`, `opencode_version` (the root's `version`), `idle_outcome` (the root's), `subagent_session_ids` (sorted) and `schema_migration`.
+
+Assistant text and reasoning are not put into the dossier. They are read only because tool items live in the same content list.
+
+Not mined: `/tmp/opencode` (worktrees), `tool-output/`, `shell/` and `snapshot/` (R§3), the HTTP API and SSE (R§4, R§5). Sessions whose `directory` is an opencode worktree get their own slug, the same as Claude Code worktree sessions.
+
 ### **3.2 distiller.py: Synthesis & PROJECT\_MEMORY.md**
 
 #### **Outputs per session**
@@ -136,18 +264,12 @@ Each distilled session writes two things:
 #### **Synthesis**
 
 * The endpoint comes from the `--llm-endpoint` flag, or else from the environment variable `CLAUDALIZER_LLM_ENDPOINT`. The model comes from `--llm-model` unless that is the default `llama3`, in which case it comes from `CLAUDALIZER_LLM_MODEL` (default `local`). The flag wins. The environment is read at call time.
-* With an endpoint, `call_llm_completion` sends the prompt from `build_synthesis_prompt` to an OpenAI-compatible `/v1/chat/completions` endpoint, using stdlib `urllib`. The request sets `max_tokens` to 1024 and `chat_template_kwargs.enable_thinking` to false, because a reasoning model otherwise spends the whole budget on reasoning and returns no visible content. The timeout is 300 s. `temperature` is 0.2. The request carries only `Content-Type: application/json`; there is no authentication, because the endpoint is a local server. There is one attempt and no retry: a connection error, HTTP error, or empty reply returns no content, and the offline block is used. Non-empty text in the reply becomes the memory block.
-* If there is no endpoint, or the call fails or returns no content, `synthesize_offline_memory_block` builds the block from the dossier, with no network access. An empty reply is logged with a warning that names the endpoint, so the fallback is not silent.
+* With an endpoint, `call_llm_completion` sends the prompt from `build_synthesis_prompt` to an OpenAI-compatible `/v1/chat/completions` endpoint, using stdlib `urllib`. The request sets `max_tokens` to 1024 and `chat_template_kwargs.enable_thinking` to false, because a reasoning model otherwise spends the whole budget on reasoning and returns no visible content. The timeout is 300 s. `temperature` is 0.2. The request carries only `Content-Type: application/json`; there is no authentication, because the endpoint is a local server. There is one attempt and no retry: a connection error, HTTP error, or empty reply returns no content. Non-empty text in the reply becomes the memory block.
+* There is no offline fallback (decided 2026-11-25: the user never wants template output written to the memory files). If there is no endpoint, or the call fails or returns no content, nothing is written: `memory.md` and `PROJECT_MEMORY.md` stay as they were, even with `--force`. An empty reply is logged with a warning that names the endpoint. `claudalizer distill` with no endpoint logs an error and exits 2; `scan --auto-distill` and `watch` log a warning and only mine.
 
-#### **Offline block format**
+#### **Memory block format**
 
-The block starts with `# Mined Behavioral Memory for <slug>`, then a `**Source Directory:**` line, then `**Objective:** <text>`. The objective is the session's first real request (at least 15 characters, whitespace collapsed, truncated to 300 characters with `…`); with no such request it reads `not captured.`. The objective is a header line, not a section. Then three sections in this order:
-
-1. `### 1. Tool / Skill Friction`: one line per failing tool call, in the form `- **{tool}** (`{command}`): {first output line containing an error marker}`. Markers: `FAILED`, `Error`, `error:`, `error[`, `Traceback`, `panicked`, `Exception`, `command not found`, `No such file`. A call with no such line is dropped. If none remain, `- None detected.`. Repeated commands are shown once.
-2. `### 2. Blind Alleys & Discarded Spikes`: one line per scratchpad file, except scratch whose first path segment is `g3-accept` or `rewrite-check` (the claudalizer's own test runs), which is excluded. If none remain, `- No ephemeral scratchpads recorded.`
-3. `### 3. Directives for CLAUDE.md`: directives inferred from the tool errors. Three error patterns are matched (a missing Python environment, a missing binary, a Cargo error). When no error matches, or there are no errors, the section is `- None detected.`. The directives come only from the session; no boilerplate is written.
-
-An LLM block gets the same title, source, and objective lines as an offline block (`frame_llm_block`). The model writes the three sections only. If the reply already starts with `# Mined Behavioral Memory`, it is kept as is.
+`frame_llm_block` puts three header lines on the LLM reply: `# Mined Behavioral Memory for <slug>`, a `**Source Directory:**` line, then `**Objective:** <text>`. The objective is the session's first real request (at least 15 characters, whitespace collapsed, truncated to 300 characters with `…`); with no such request it reads `not captured.`. A Claude Code slash-command wrapper (`<command-name>/x</command-name>…<command-args>y</command-args>`) is read as `/x y`; one with no arguments (`/clear`, `/model`) is skipped. The model writes the three sections (`### 1. Tool / Skill Friction`, `### 2. Blind Alleys & Discarded Spikes`, `### 3. Directives for CLAUDE.md`). If the reply already starts with `# Mined Behavioral Memory`, it is kept as is.
 
 #### **PROJECT\_MEMORY.md format**
 
@@ -186,6 +308,7 @@ Use argparse with the following subcommands:
 - `claudalizer [--memories-root <path>] watch [--interval 3] [--history-limit <non-negative integer>] [--notify] [--auto-distill | --no-auto-distill]`
   - `watch` distills mined sessions by default; `--no-auto-distill` turns this off.
 - `claudalizer install-systemd [--dry-run]`
+- Global flags (G_opencode): `--source <list>`, a comma-separated subset of `claude,opencode`, default `claude,opencode`. An unknown name is an argparse error. `--opencode-db <path>` has no default in argparse; when it is unset, the path is resolved as in §3.1 *opencode source*.
 
 > * watch: Uses a loop with os.stat or file descriptor notifications and acquires /tmp/claudalizer.lock via fcntl.flock(fd, fcntl.LOCK\_EX \| fcntl.LOCK\_NB) to ensure single-instance safety.  
 > * install-systemd: Emits units to \~/.config/systemd/user/ and calls systemctl \--user daemon-reload.
@@ -207,13 +330,12 @@ Tests create a `MemoryDistiller` with `memories_root=tmp_path`, and mock `call_l
 
 Characterisation tests (must pass on current code):
 
-> * **test\_offline\_block\_has\_three\_sections\_in\_order**: The three `### N.` headings appear in order in the offline block.
 > * **test\_distill\_session\_writes\_memory\_md\_and\_project\_memory**: `memory.md` exists, and `PROJECT_MEMORY.md` contains `## Session <id[:8]> Distillation`.
 > * **test\_distill\_session\_skips\_existing\_memory\_without\_force**: A second call without `force` returns the existing path and does not append again.
 > * **test\_llm\_block\_used\_when\_endpoint\_returns\_content**: With a mocked LLM reply, `memory.md` contains the reply text.
-> * **test\_offline\_fallback\_when\_llm\_returns\_nothing**: With a mocked empty reply, `memory.md` contains `# Mined Behavioral Memory`.
+> * **test\_no\_memory\_written\_when\_llm\_returns\_nothing**: With a mocked empty reply, no `memory.md` or `PROJECT_MEMORY.md` is written.
+> * **test\_no\_endpoint\_writes\_nothing\_and\_makes\_no\_call**: Without an endpoint, nothing is written and no call is made.
 > * **test\_distill\_all\_respects\_target\_slug**: With two slugs, `target_slug` limits the output to one.
-> * **test\_python\_error\_maps\_to\_venv\_directive**: A `No such file or directory` error mentioning `python` yields the virtualenv directive.
 > * **test\_synthesis\_prompt\_mentions\_errors\_and\_scratchpads**: `build_synthesis_prompt` output contains the failing command and a scratchpad path.
 
 Target behaviour (marked `xfail(strict=True)` with the goal id in the reason; each test flips to pass when its goal lands):
@@ -236,6 +358,48 @@ Target behaviour (marked `xfail(strict=True)` with the goal id in the reason; ea
 > * **test\_objective\_is\_first\_real\_request**, **test\_objective\_truncated\_to\_300\_chars\_with\_ellipsis**, **test\_objective\_not\_captured\_when\_no\_prompts**: the `**Objective:**` header line; the block still has three `###` sections.
 
 Criterion 5 of GOALS.md G15 (the format is written down) is checked by the grep acceptance for this spec, not by a test.
+
+### **4.1a opencode source (test\_opencode\_\*.py, test\_source\_core.py)**
+
+The tests live in four files: `test_source_core.py` (the core loop and the split), `test_opencode_fixture.py`, `test_opencode_source.py` (the reader and the source), and `test_opencode_schema.py` (the guard in `claudalizer/sources/opencode_schema.py`). Guard tests that need a whole scan (`test_missing_column_skips_source_with_warning`, `test_corrupt_db_does_not_stop_scan`, `test_db_opened_read_only`) live in `test_opencode_source.py`; unit tests of the open function live in `test_opencode_schema.py`. An autouse fixture in `tests/conftest.py` points `OPENCODE_DB` and `XDG_DATA_HOME` at missing paths under `tmp_path`. `SessionMiner()` defaults to the Claude Code source only; `cli.py` adds opencode.
+
+Tests build the database in `tmp_path` with `tests/opencode_fixture.py`, which creates the tables and columns in the §3.1 table plus a `migration` row. It has helpers for adding sessions, messages and part rows. No test opens the real `opencode.db`. All existing `tests/test_miner.py` tests pass unchanged after the source split (G_oc-seam).
+
+Fixture and reader (G_oc-fixture, G_oc-read):
+
+> * **test\_slug\_from\_directory\_matches\_claude\_code\_rule**: `/home/u/.x/my_repo` gives `-home-u--x-my-repo`.
+> * **test\_prompts\_from\_user\_messages\_only**: `synthetic` and `system` text and prompts under 15 characters are left out.
+> * **test\_inline\_and\_part\_content\_merged\_in\_order**: A message with part rows and inline content yields tool items in part-ordinal order, then inline order.
+> * **test\_tool\_error\_status\_recorded**: `state.status="error"` gives an event whose `error_output` contains `error:` and the message.
+> * **test\_failed\_shell\_exit\_code\_recorded**: A completed `shell` call with `metadata.exit=2` gives `exit_code=2` and the output text.
+> * **test\_zero\_exit\_shell\_not\_recorded**: `metadata.exit=0` gives no event.
+> * **test\_exit\_code\_pattern\_matches\_both\_forms**: `Exit code 1` and `Exit code: 1` are both non-zero exits.
+> * **test\_failed\_idle\_turn\_recorded**: An `idle` message with `outcome="failed"` gives a `session` event.
+> * **test\_touched\_files\_from\_snapshot\_edit\_and\_patch**: Relative snapshot paths are made absolute; edit, write and patch paths are included; there are no duplicates.
+> * **test\_busy\_session\_not\_mined**: `time_busy > time_idle` puts the session in `skipped["active"]`.
+> * **test\_unmarked\_session\_mined\_after\_quiet\_window**: `time_idle` null with a marker older than `OPENCODE_QUIET_SECONDS` is mined.
+> * **test\_part\_update\_triggers\_remine**: Only a newer `session_part.time_updated` re-mines a session that already has a dossier.
+> * **test\_unchanged\_session\_is\_up\_to\_date**: A second scan counts the family in `skipped["up_to_date"]`.
+> * **test\_subagent\_folded\_into\_root**: The child's prompts, errors and touched files appear in the root dossier after the root's own. `source_meta.subagent_session_ids` lists the child. There is no child dossier.
+> * **test\_busy\_subagent\_holds\_root**: The root is idle and the child is busy, so the family is active.
+> * **test\_orphan\_subagent\_becomes\_root**: A child whose parent row is missing gets its own dossier.
+> * **test\_dossier\_records\_source\_fields**: `source="opencode"`, plus `project_id`, `opencode_version` and `schema_migration` in `source_meta`.
+
+Guard (G_oc-guard):
+
+> * **test\_missing\_column\_skips\_source\_with\_warning**: With `session_v2.time_busy` dropped, the warning names it, opencode yields nothing, and Claude Code sessions are still mined.
+> * **test\_unknown\_migration\_warns\_and\_reads**: A later migration id warns once and sessions are still mined.
+> * **test\_missing\_db\_is\_silent**: There are no warnings and Claude Code mining is unaffected.
+> * **test\_corrupt\_db\_does\_not\_stop\_scan**: A file that is not SQLite logs a warning; `scan_and_mine` returns normally.
+> * **test\_db\_opened\_read\_only**: The database bytes and mtime are unchanged after a scan.
+
+CLI and integration (G_oc-cli):
+
+> * **test\_source\_flag\_limits\_sources**: `--source claude` never opens the database; an unknown name is rejected.
+> * **test\_opencode\_db\_resolution\_order**: The flag wins over `OPENCODE_DB`, which wins over `XDG_DATA_HOME`.
+> * **test\_watch\_skips\_queries\_when\_db\_unchanged**: Unchanged database and `-wal` mtimes mean no opencode query on that tick.
+> * **test\_watch\_rechecks\_while\_family\_unsettled**: With unchanged mtimes, a family that was active on the last pass is checked again, and it is mined once it is quiet for 600 s.
+> * **test\_both\_sources\_share\_project\_memory**: A Claude Code session and an opencode session for the same directory both appear in one `PROJECT_MEMORY.md` after distill.
 
 ### **4.3 IPC & Environments (test\_ipc.py)**
 

@@ -459,7 +459,7 @@ def test_successful_dossier_write_leaves_no_temp_file(tmp_path):
     assert not list(session_out.glob("*.tmp"))
 
 
-def test_distiller_offline(tmp_path):
+def test_distiller_with_llm(tmp_path, fake_llm):
     memories_root = tmp_path / "memories"
     slug = "-home-andrew-AI-claudalizer"
     session_id = "test-session-uuid-456"
@@ -485,7 +485,7 @@ def test_distiller_offline(tmp_path):
         json.dump(dossier_data, f)
 
     distiller = MemoryDistiller(memories_root=memories_root)
-    res = distiller.distill_session(slug, session_id)
+    res = distiller.distill_session(slug, session_id, llm_endpoint="http://127.0.0.1:9/v1")
     assert res is not None
     assert res.exists()
 
