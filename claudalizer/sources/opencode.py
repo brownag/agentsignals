@@ -277,9 +277,28 @@ class OpencodeSource:
         self.skip_if_unchanged = skip_if_unchanged
         # root id -> [{"id", "directory", "time_created"}, ...], root first
         self._families: dict[str, list[dict]] = {}
+        self._last_mtimes: Optional[tuple[float, float]] = None
+        self._had_unsettled = False
+
+    def _db_mtimes(self) -> tuple[float, float]:
+        out = []
+        for p in (self.db_path, Path(str(self.db_path) + "-wal")):
+            try:
+                out.append(p.stat().st_mtime)
+            except OSError:
+                out.append(0.0)
+        return out[0], out[1]
 
     def iter_sessions(self, target_slug: Optional[str]) -> Iterator[SessionRef]:
+        mtimes = self._db_mtimes()
+        if (
+            self.skip_if_unchanged
+            and self._last_mtimes == mtimes
+            and not self._had_unsettled
+        ):
+            return
         self._families = {}
+        had_unsettled = False
         opened = open_readonly(self.db_path)
         if opened is None:
             return
@@ -303,7 +322,10 @@ class OpencodeSource:
                 m[5] is not None and m[5] >= (m[4] or 0) for m in members
             )
             settled = (idle_all and age >= SETTLE_DEBOUNCE_SECONDS) or age >= OPENCODE_QUIET_SECONDS
-            ordered = [root] + [m for m in members if m[0] != root_id]
+            children = sorted((m for m in members if m[0] != root_id), key=lambda m: m[3] or 0)
+            ordered = [root] + children
+            if not settled:
+                had_unsettled = True
             self._families[root_id] = [
                 {"id": m[0], "directory": m[2], "time_created": m[3]} for m in ordered
             ]
@@ -315,21 +337,44 @@ class OpencodeSource:
                 changed_at=changed_at,
                 settled=settled,
             )
+        # Committed only after every ref was consumed; an aborted pass stays stale.
+        self._last_mtimes = mtimes
+        self._had_unsettled = had_unsettled
 
     def extract(self, ref: SessionRef) -> Extraction:
         opened = open_readonly(self.db_path)
         if opened is None:
-            return Extraction([], [], None, [], False, {})
-        conn, _ = opened
+            raise RuntimeError(f"opencode database unavailable: {self.db_path}")
+        conn, migration = opened
         try:
-            prompts, errors, files = extract_session(conn, ref.session_id, ref.decoded_path or "")
+            members = self._families.get(ref.session_id) or [
+                {"id": ref.session_id, "directory": ref.decoded_path}
+            ]
+            prompts: list[str] = []
+            errors: list[ToolErrorEvent] = []
+            files: set[str] = set()
+            for m in members:
+                p, e, f = extract_session(conn, m["id"], m["directory"] or "")
+                prompts.extend(p)
+                errors.extend(e)
+                files.update(f)
+            row = conn.execute(
+                "SELECT project_id, version, idle_outcome FROM session_v2 WHERE id=?",
+                (ref.session_id,),
+            ).fetchone() or (None, None, None)
         finally:
             conn.close()
         return Extraction(
             user_prompts=prompts,
             tool_errors=errors,
             scratchpad_dir=None,
-            touched_files=files,
+            touched_files=sorted(files)[:MAX_TOUCHED_FILES],
             transcript_found=True,
-            source_meta={},
+            source_meta={
+                "project_id": row[0],
+                "opencode_version": row[1],
+                "idle_outcome": row[2],
+                "subagent_session_ids": sorted(m["id"] for m in members[1:]),
+                "schema_migration": migration,
+            },
         )

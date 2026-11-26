@@ -248,3 +248,131 @@ def test_target_slug_filters_families(tmp_path):
     refs = list(src.iter_sessions("-work-two"))
     assert [r.session_id for r in refs] == ["b"]
     assert [f["id"] for f in src._families["b"]] == ["b", "c"]
+
+
+def _family(tmp_path):
+    with _fam_db(tmp_path) as db:
+        t = _sess(db, "a", age_s=100)
+        _sess(db, "c2", parent="a", age_s=100)
+        _sess(db, "c1", parent="a", age_s=100)
+        for sid, off in (("a", 200_000), ("c1", 150_000), ("c2", 100_000)):
+            db.conn.execute("UPDATE session_v2 SET time_created=? WHERE id=?", (NOW_MS - off, sid))
+        _prompt(db, "a", t)
+        for sid, txt in (("c1", "child one prompt text"), ("c2", "child two prompt text")):
+            db.add_message(sid, "user", {"text": txt}, time_updated=t)
+        mid = db.add_message("c1", "assistant", assistant_data([], snapshot_files=["z.py"]),
+                             time_updated=t)
+        assert mid
+    return db
+
+
+def test_subagent_folded_into_root(tmp_path):
+    db = _family(tmp_path)
+    m = _miner(tmp_path, db.path)
+    assert len(m.scan_and_mine()) == 1
+    import json
+    d = json.loads(_dossier(tmp_path).read_text())
+    assert d["user_prompts"] == [LONG, "child one prompt text", "child two prompt text"]
+    assert "/work/proj/z.py" in d["touched_files"]
+    assert d["source_meta"]["subagent_session_ids"] == ["c1", "c2"]
+    assert not _dossier(tmp_path, sid="c1").exists()
+
+
+def test_dossier_records_source_fields(tmp_path):
+    import json
+    db = _family(tmp_path)
+    _miner(tmp_path, db.path).scan_and_mine()
+    d = json.loads(_dossier(tmp_path).read_text())
+    assert d["source"] == "opencode"
+    meta = d["source_meta"]
+    assert meta["project_id"] == "p1" and meta["opencode_version"] == "2.4.1"
+    assert meta["idle_outcome"] == "succeeded"
+    assert meta["schema_migration"] == "20261120004954_machine-key"
+
+
+def test_missing_column_skips_source_with_warning(tmp_path, caplog):
+    from claudalizer.sources import opencode_schema
+    from claudalizer.sources.claude_code import ClaudeCodeSource
+    opencode_schema._reset_warnings()
+    with _fam_db(tmp_path) as db:
+        t = _sess(db, "a", age_s=100)
+        _prompt(db, "a", t)
+        db.drop_column("session_part", "call_id")
+    tmp_root = tmp_path / "tmp"
+    scratch = tmp_root / "-home-x" / "sid1" / "scratchpad"
+    scratch.mkdir(parents=True)
+    (scratch / "n.txt").write_text("note")
+    old = time.time() - 100
+    for q in (scratch / "n.txt", scratch, scratch.parent, scratch.parent.parent, tmp_root):
+        os.utime(q, (old, old))
+    m = SessionMiner(
+        tmp_root=tmp_root, claude_projects=tmp_path / "cp", memories_root=tmp_path / "mem",
+        lock_file=tmp_path / "lock",
+        sources=[oc.OpencodeSource(db.path), ClaudeCodeSource(tmp_root, tmp_path / "cp")],
+    )
+    with caplog.at_level("WARNING"):
+        out = m.scan_and_mine()
+    assert len(out) == 1
+    assert any("missing" in r.getMessage() for r in caplog.records)
+    assert not _dossier(tmp_path).exists()
+
+
+def test_corrupt_db_does_not_stop_scan(tmp_path):
+    from claudalizer.sources import opencode_schema
+    opencode_schema._reset_warnings()
+    bad = tmp_path / "bad.db"
+    bad.write_bytes(b"not a sqlite database" * 50)
+    assert _miner(tmp_path, bad).scan_and_mine() == []
+
+
+def test_db_opened_read_only(tmp_path):
+    db = _family(tmp_path)
+    before = (db.path.read_bytes(), db.path.stat().st_mtime_ns)
+    _miner(tmp_path, db.path).scan_and_mine()
+    assert (db.path.read_bytes(), db.path.stat().st_mtime_ns) == before
+
+
+def _spy(monkeypatch):
+    calls = []
+    real = oc.open_readonly
+
+    def spy(path):
+        calls.append(path)
+        return real(path)
+
+    monkeypatch.setattr(oc, "open_readonly", spy)
+    return calls
+
+
+def test_watch_skips_queries_when_db_unchanged(tmp_path, monkeypatch):
+    with _fam_db(tmp_path) as db:
+        t = _sess(db, "a", age_s=100)
+        _prompt(db, "a", t)
+    calls = _spy(monkeypatch)
+    src = oc.OpencodeSource(db.path, skip_if_unchanged=True)
+    assert len(list(src.iter_sessions(None))) == 1
+    assert len(calls) == 1
+    assert list(src.iter_sessions(None)) == []
+    assert len(calls) == 1
+    os.utime(db.path, (time.time() + 5, time.time() + 5))
+    assert len(list(src.iter_sessions(None))) == 1
+    assert len(calls) == 2
+
+
+def test_watch_rechecks_while_family_unsettled(tmp_path, monkeypatch):
+    with _fam_db(tmp_path) as db:
+        t = _sess(db, "a", age_s=5, idle=False)
+        _prompt(db, "a", t)
+    calls = _spy(monkeypatch)
+    src = oc.OpencodeSource(db.path, skip_if_unchanged=True)
+    assert not list(src.iter_sessions(None))[0].settled
+    assert not list(src.iter_sessions(None))[0].settled
+    assert len(calls) == 2
+
+
+def test_opencode_dossier_distills_offline(tmp_path):
+    from claudalizer.distiller import MemoryDistiller
+    db = _family(tmp_path)
+    _miner(tmp_path, db.path).scan_and_mine()
+    res = MemoryDistiller(memories_root=tmp_path / "mem").distill_session("-work-proj", "a")
+    assert res is not None and res.name == "memory.md" and res.exists()
