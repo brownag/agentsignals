@@ -3,8 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import claudalizer.cli as cli
-import claudalizer.ipc as ipc
+import agentsignals.cli as cli
+import agentsignals.ipc as ipc
 
 
 def _args(tmp_path, command, *options):
@@ -171,9 +171,9 @@ def test_both_sources_share_project_memory(tmp_path, fake_llm):
     import os
     import time
 
-    from claudalizer.distiller import MemoryDistiller
-    from claudalizer.miner import SessionMiner
-    from claudalizer.sources.opencode import slug_for_directory
+    from agentsignals.distiller import MemoryDistiller
+    from agentsignals.miner import SessionMiner
+    from agentsignals.sources.opencode import slug_for_directory
     from tests.opencode_fixture import OpencodeDB
 
     proj_dir = str(tmp_path / "work" / "proj")
@@ -213,7 +213,7 @@ def test_both_sources_share_project_memory(tmp_path, fake_llm):
 
 
 def test_distill_without_endpoint_fails_and_writes_nothing(tmp_path, monkeypatch, caplog):
-    monkeypatch.delenv("CLAUDALIZER_LLM_ENDPOINT", raising=False)
+    monkeypatch.delenv("AGENTSIGNALS_LLM_ENDPOINT", raising=False)
     sess = tmp_path / "memories" / "-slug-a" / "abcdef12-3456"
     sess.mkdir(parents=True)
     (sess / "dossier.json").write_text(json.dumps({"slug": "-slug-a", "user_prompts": ["Fix the build please"]}), encoding="utf-8")
@@ -225,7 +225,7 @@ def test_distill_without_endpoint_fails_and_writes_nothing(tmp_path, monkeypatch
 
 
 def test_watch_without_endpoint_does_not_distill(tmp_path, monkeypatch, caplog):
-    monkeypatch.delenv("CLAUDALIZER_LLM_ENDPOINT", raising=False)
+    monkeypatch.delenv("AGENTSIGNALS_LLM_ENDPOINT", raising=False)
     dossier = SimpleNamespace(slug="-slug-a", session_id="s1", tool_errors=[], scratchpad_files=[])
     monkeypatch.setattr(cli, "SessionMiner", _fake_miner([[dossier]]))
     calls = []
@@ -249,6 +249,25 @@ def test_no_git_flag_disables_repo(tmp_path):
     parser = cli.build_parser()
     assert cli.build_repo(parser.parse_args(["--memories-root", root, "scan"])).enabled is True
     assert cli.build_repo(parser.parse_args(["--memories-root", root, "--no-git", "scan"])).enabled is False
+
+
+def test_new_environment_variables_precede_legacy_aliases(monkeypatch):
+    monkeypatch.setenv("AGENTSIGNALS_LLM_ENDPOINT", "https://new.example")
+    monkeypatch.setenv("CLAUDALIZER_LLM_ENDPOINT", "https://old.example")
+    monkeypatch.setenv("AGENTSIGNALS_LLM_MODEL", "new-model")
+    monkeypatch.setenv("CLAUDALIZER_LLM_MODEL", "old-model")
+
+    endpoint, model = cli.resolve_llm_settings(SimpleNamespace(llm_endpoint=None, llm_model="llama3"))
+    assert endpoint == "https://new.example"
+    assert model == "new-model"
+
+
+def test_legacy_cli_entrypoint_uses_deprecation_program_name(monkeypatch):
+    called = []
+    monkeypatch.setattr(cli, "handle_scan", lambda args: called.append(args.command) or 0)
+
+    assert cli.legacy_main(["scan"]) == 0
+    assert called == ["scan"]
 
 
 def test_watch_passes_repo_and_min_remine(tmp_path, monkeypatch):

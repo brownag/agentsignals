@@ -1,4 +1,4 @@
-"""tests/test_distiller.py - Tests for claudalizer/distiller.py (SPEC §3.2, §4.2).
+"""tests/test_distiller.py - Tests for agentsignals/distiller.py (SPEC §3.2, §4.2).
 
 Characterisation tests pin behaviour that is correct today. Strict xfail tests describe
 target behaviour owned by goals G18-G21; each one starts passing when its goal lands, and
@@ -10,8 +10,8 @@ Every test uses tmp_path for the memories root and never makes a network call.
 import json
 
 
-import claudalizer.distiller as distiller_mod
-from claudalizer.distiller import MemoryDistiller, build_synthesis_prompt, frame_llm_block
+import agentsignals.distiller as distiller_mod
+from agentsignals.distiller import MemoryDistiller, build_synthesis_prompt, frame_llm_block
 
 
 EP = "http://127.0.0.1:9/v1"
@@ -307,10 +307,10 @@ def test_empty_llm_reply_returns_none_and_warns(monkeypatch, caplog):
 
 def test_resolve_llm_settings_uses_environment_when_flag_absent(monkeypatch):
     import argparse
-    from claudalizer.cli import resolve_llm_settings
+    from agentsignals.cli import resolve_llm_settings
 
-    monkeypatch.setenv("CLAUDALIZER_LLM_ENDPOINT", "http://127.0.0.1:8090/v1/chat/completions")
-    monkeypatch.delenv("CLAUDALIZER_LLM_MODEL", raising=False)
+    monkeypatch.setenv("AGENTSIGNALS_LLM_ENDPOINT", "http://127.0.0.1:8090/v1/chat/completions")
+    monkeypatch.delenv("AGENTSIGNALS_LLM_MODEL", raising=False)
     args = argparse.Namespace(llm_endpoint=None, llm_model="llama3")
 
     assert resolve_llm_settings(args) == ("http://127.0.0.1:8090/v1/chat/completions", "local")
@@ -318,9 +318,9 @@ def test_resolve_llm_settings_uses_environment_when_flag_absent(monkeypatch):
 
 def test_resolve_llm_settings_flag_wins_over_environment(monkeypatch):
     import argparse
-    from claudalizer.cli import resolve_llm_settings
+    from agentsignals.cli import resolve_llm_settings
 
-    monkeypatch.setenv("CLAUDALIZER_LLM_ENDPOINT", "http://127.0.0.1:8090/v1/chat/completions")
+    monkeypatch.setenv("AGENTSIGNALS_LLM_ENDPOINT", "http://127.0.0.1:8090/v1/chat/completions")
     args = argparse.Namespace(llm_endpoint="http://127.0.0.1:9999/v1/chat/completions", llm_model="mymodel")
 
     assert resolve_llm_settings(args) == ("http://127.0.0.1:9999/v1/chat/completions", "mymodel")
@@ -328,9 +328,9 @@ def test_resolve_llm_settings_flag_wins_over_environment(monkeypatch):
 
 def test_resolve_llm_settings_no_endpoint_is_none(monkeypatch):
     import argparse
-    from claudalizer.cli import resolve_llm_settings
+    from agentsignals.cli import resolve_llm_settings
 
-    monkeypatch.delenv("CLAUDALIZER_LLM_ENDPOINT", raising=False)
+    monkeypatch.delenv("AGENTSIGNALS_LLM_ENDPOINT", raising=False)
     args = argparse.Namespace(llm_endpoint=None, llm_model="llama3")
 
     assert resolve_llm_settings(args)[0] is None
@@ -480,7 +480,7 @@ def test_no_commit_when_nothing_written(tmp_path, fake_llm, monkeypatch):
 
 
 def test_lock_not_held_during_llm_call(tmp_path, monkeypatch):
-    from claudalizer.miner import file_lock
+    from agentsignals.miner import file_lock
 
     root = tmp_path / "mem"
     lock = tmp_path / "miner.lock"

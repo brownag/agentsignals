@@ -63,4 +63,8 @@ dmypy.json
 
 # Claudalizer local runtime artifacts & locks
 /tmp/claudalizer*
+/tmp/agent-signals*
 .claude-mined-memories/
+
+# Temporary plan-first execution artifact
+/TODO.md

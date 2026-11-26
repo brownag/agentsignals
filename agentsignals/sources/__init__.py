@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Protocol
 
 if TYPE_CHECKING:
-    from claudalizer.miner import ToolErrorEvent
+    from agentsignals.miner import ToolErrorEvent
 
 
 @dataclass(frozen=True)

@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 import pytest
 
-from claudalizer.miner import (
+from agentsignals.miner import (
     SessionMiner,
     decode_slug,
     is_git_discernable,
@@ -14,10 +14,10 @@ from claudalizer.miner import (
     file_lock,
     is_file_settled,
 )
-import claudalizer.miner as miner_module
-from claudalizer.distiller import MemoryDistiller
-from claudalizer.ipc import emit_waybar_signal
-from claudalizer.cli import main as cli_main
+import agentsignals.miner as miner_module
+from agentsignals.distiller import MemoryDistiller
+from agentsignals.ipc import emit_waybar_signal
+from agentsignals.cli import main as cli_main
 
 
 def test_slug_decoding(tmp_path):

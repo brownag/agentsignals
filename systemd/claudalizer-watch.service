@@ -1,10 +1,10 @@
 [Unit]
-Description=Claudalizer Continuous Session Watcher
-Documentation=https://github.com/example/claudalizer
+Description=AgentSignals Continuous Session Watcher
+Documentation=https://github.com/example/agent-signals
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/claudalizer watch
+ExecStart=%h/.local/bin/agent-signals watch
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

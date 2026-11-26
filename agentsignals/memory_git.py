@@ -17,7 +17,7 @@ from typing import List, Optional
 log = logging.getLogger(__name__)
 
 GIT_IGNORE_LINES = ["scan_status.json", "*.tmp", ".PROJECT_MEMORY.*.tmp"]
-BOT_NAME, BOT_EMAIL = "claudalizer", "claudalizer@localhost"
+BOT_NAME, BOT_EMAIL = "AgentSignals", "agentsignals@localhost"
 
 _GIT_TIMEOUT_SECONDS = 120
 _git_missing_warned = False
@@ -39,7 +39,7 @@ class MemoryRepo:
         self.root = Path(root).expanduser()
         self.enabled = enabled
         self._active = False
-        if os.environ.get("CLAUDALIZER_TESTING") and self.root.resolve() == (
+        if (os.environ.get("AGENTSIGNALS_TESTING") or os.environ.get("CLAUDALIZER_TESTING")) and self.root.resolve() == (
             Path.home() / ".claude-mined-memories"
         ).resolve():
             raise RuntimeError("tests must not use the real memories root")

@@ -3,7 +3,7 @@ import os
 import time
 from pathlib import Path
 
-from claudalizer.miner import SessionMiner
+from agentsignals.miner import SessionMiner
 
 SLUG = "-home-andrew-AI-claudalizer"
 

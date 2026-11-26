@@ -3,8 +3,8 @@ import os
 import sqlite3
 import time
 
-from claudalizer.sources import opencode as oc
-from claudalizer.miner import SessionMiner
+from agentsignals.sources import opencode as oc
+from agentsignals.miner import SessionMiner
 from tests.opencode_fixture import OpencodeDB, assistant_data, tool_item
 
 S = "s1"
@@ -303,8 +303,8 @@ def test_dossier_records_source_fields(tmp_path):
 
 
 def test_missing_column_skips_source_with_warning(tmp_path, caplog):
-    from claudalizer.sources import opencode_schema
-    from claudalizer.sources.claude_code import ClaudeCodeSource
+    from agentsignals.sources import opencode_schema
+    from agentsignals.sources.claude_code import ClaudeCodeSource
     opencode_schema._reset_warnings()
     with _fam_db(tmp_path) as db:
         t = _sess(db, "a", age_s=100)
@@ -330,7 +330,7 @@ def test_missing_column_skips_source_with_warning(tmp_path, caplog):
 
 
 def test_corrupt_db_does_not_stop_scan(tmp_path):
-    from claudalizer.sources import opencode_schema
+    from agentsignals.sources import opencode_schema
     opencode_schema._reset_warnings()
     bad = tmp_path / "bad.db"
     bad.write_bytes(b"not a sqlite database" * 50)
@@ -383,7 +383,7 @@ def test_watch_rechecks_while_family_unsettled(tmp_path, monkeypatch):
 
 
 def test_opencode_dossier_distills(tmp_path, fake_llm):
-    from claudalizer.distiller import MemoryDistiller
+    from agentsignals.distiller import MemoryDistiller
     db = _family(tmp_path)
     _miner(tmp_path, db.path).scan_and_mine()
     res = MemoryDistiller(memories_root=tmp_path / "mem").distill_session("-work-proj", "a", llm_endpoint="http://127.0.0.1:9/v1")

@@ -3,14 +3,14 @@
 from pathlib import Path
 from typing import Iterator, Optional
 
-from claudalizer.miner import (
+from agentsignals.miner import (
     SETTLE_DEBOUNCE_SECONDS,
     decode_slug,
     is_file_settled,
     newest_mtime,
     parse_transcript_events,
 )
-from claudalizer.sources import Extraction, SessionRef
+from agentsignals.sources import Extraction, SessionRef
 
 
 class ClaudeCodeSource:

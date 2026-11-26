@@ -6,8 +6,8 @@ import time
 
 import pytest
 
-from claudalizer.memory_git import MemoryRepo
-from claudalizer.miner import SessionMiner
+from agentsignals.memory_git import MemoryRepo
+from agentsignals.miner import SessionMiner
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
 

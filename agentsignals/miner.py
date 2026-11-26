@@ -1,4 +1,4 @@
-"""Core scanning, snapshotting, and extraction engine for claudalizer."""
+"""Core scanning, snapshotting, and extraction engine for agentsignals."""
 
 import fcntl
 import hashlib
@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Tuple
 
 if TYPE_CHECKING:
-    from claudalizer.memory_git import MemoryRepo
+    from agentsignals.memory_git import MemoryRepo
 
 logger = logging.getLogger(__name__)
 
@@ -382,7 +382,7 @@ class SessionMiner:
         min_remine_seconds: float = 0.0,
         repo: Optional["MemoryRepo"] = None,
     ):
-        from claudalizer.sources.claude_code import ClaudeCodeSource
+        from agentsignals.sources.claude_code import ClaudeCodeSource
 
         self.tmp_root = Path(tmp_root)
         self.claude_projects = Path(claude_projects)
@@ -457,8 +457,8 @@ class SessionMiner:
         force: bool = False,
     ) -> Optional[SessionDossier]:
         """Mine one Claude Code session (wrapper over _mine_ref)."""
-        from claudalizer.sources import SessionRef
-        from claudalizer.sources.claude_code import ClaudeCodeSource
+        from agentsignals.sources import SessionRef
+        from agentsignals.sources.claude_code import ClaudeCodeSource
 
         adapter = ClaudeCodeSource(self.tmp_root, self.claude_projects)
         ref = SessionRef(
