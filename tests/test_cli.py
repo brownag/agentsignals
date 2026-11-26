@@ -127,3 +127,86 @@ def test_watch_records_each_batch_and_preserves_latest_on_shutdown(tmp_path, mon
     assert len(state["history"]) == 1
     assert json.loads(ipc.DEFAULT_STATUS_FILE.read_text())["text"] == "🧠 1 | 2"
     assert len(notifications) == int(notify)
+
+
+def _kinds(sources):
+    return [type(s).__name__ for s in sources]
+
+
+def test_source_flag_limits_sources(tmp_path):
+    args = cli.build_parser().parse_args(["--source", "claude", "scan"])
+    assert _kinds(cli.build_sources(args, watch=False)) == ["ClaudeCodeSource"]
+    args = cli.build_parser().parse_args(["scan"])
+    assert _kinds(cli.build_sources(args, watch=False)) == ["ClaudeCodeSource", "OpencodeSource"]
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(["--source", "bogus", "scan"])
+
+
+def test_watch_builds_opencode_source_with_precheck(tmp_path, monkeypatch):
+    seen = {}
+
+    class FakeMiner:
+        def __init__(self, **kwargs):
+            seen["sources"] = kwargs["sources"]
+            self.skipped = {}
+
+        def scan_and_mine(self, **kwargs):
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli, "SessionMiner", FakeMiner)
+    monkeypatch.setattr(cli, "dispatch_wm_hook", lambda *a, **k: None)
+    args = _args(tmp_path, "watch")
+    try:
+        cli.handle_watch(args)
+    except (KeyboardInterrupt, SystemExit):
+        pass
+    oc = [s for s in seen["sources"] if type(s).__name__ == "OpencodeSource"]
+    assert len(oc) == 1 and oc[0].skip_if_unchanged is True
+    scan_args = _args(tmp_path, "scan")
+    oc = [s for s in cli.build_sources(scan_args, watch=False) if type(s).__name__ == "OpencodeSource"]
+    assert oc[0].skip_if_unchanged is False
+
+
+def test_both_sources_share_project_memory(tmp_path):
+    import os
+    import time
+
+    from claudalizer.distiller import MemoryDistiller
+    from claudalizer.miner import SessionMiner
+    from claudalizer.sources.opencode import slug_for_directory
+    from tests.opencode_fixture import OpencodeDB
+
+    proj_dir = str(tmp_path / "work" / "proj")
+    slug = slug_for_directory(proj_dir)
+    tmp_root = tmp_path / "tmp_claude"
+    projects = tmp_path / "projects"
+    scratch = tmp_root / slug / "claude-sess" / "scratchpad"
+    scratch.mkdir(parents=True)
+    (scratch / "probe.py").write_text("# probe", encoding="utf-8")
+    (projects / slug).mkdir(parents=True)
+    (projects / slug / "claude-sess.jsonl").write_text(
+        json.dumps({"type": "user", "message": {"content": "Claude Code prompt long enough"}}) + "\n",
+        encoding="utf-8",
+    )
+    old = time.time() - 100
+    for p in (scratch / "probe.py", scratch, scratch.parent, tmp_root / slug):
+        os.utime(p, (old, old))
+
+    t = int((time.time() - 3600) * 1000)
+    with OpencodeDB(tmp_path / "oc.db") as db:
+        db.add_session("oc-sess", proj_dir, time_busy=t - 1, time_idle=t, time_created=t, time_updated=t)
+        db.add_message("oc-sess", "user", {"text": "please do the opencode thing now"}, time_updated=t)
+
+    memories = tmp_path / "memories"
+    args = cli.build_parser().parse_args(
+        ["--tmp-root", str(tmp_root), "--claude-projects", str(projects),
+         "--opencode-db", str(tmp_path / "oc.db"), "scan"]
+    )
+    miner = SessionMiner(
+        tmp_root=tmp_root, claude_projects=projects, memories_root=memories,
+        lock_file=tmp_path / "lock", sources=cli.build_sources(args, watch=False),
+    )
+    assert len(miner.scan_and_mine(debounce=False)) == 2
+    MemoryDistiller(memories_root=memories).distill_all()
+    text = (memories / slug / "PROJECT_MEMORY.md").read_text(encoding="utf-8")
+    assert text.count("## Session") == 2

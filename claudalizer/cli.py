@@ -11,6 +11,9 @@ from typing import Optional, Tuple
 
 from claudalizer.distiller import MemoryDistiller
 from claudalizer.ipc import dispatch_wm_hook, emit_waybar_signal, record_scan, send_notification
+from claudalizer.sources.claude_code import ClaudeCodeSource
+from claudalizer.sources.opencode import OpencodeSource
+from claudalizer.sources.opencode_schema import resolve_db_path
 from claudalizer.waybar_config import find_waybar_config, manual_snippet, patch_waybar_config
 from claudalizer.miner import (
     DEFAULT_CLAUDE_PROJECTS,
@@ -81,12 +84,34 @@ def format_skip_summary(skipped: dict) -> str:
     return "\n".join(lines)
 
 
+def _source_list(value: str) -> list:
+    names = []
+    for part in value.split(","):
+        name = part.strip()
+        if name not in ("claude", "opencode"):
+            raise argparse.ArgumentTypeError(f"unknown source {name!r} (choose from claude, opencode)")
+        if name not in names:
+            names.append(name)
+    return names
+
+
+def build_sources(args: argparse.Namespace, watch: bool) -> list:
+    sources = []
+    for name in args.source:
+        if name == "claude":
+            sources.append(ClaudeCodeSource(Path(args.tmp_root), Path(args.claude_projects)))
+        else:
+            sources.append(OpencodeSource(resolve_db_path(args.opencode_db), skip_if_unchanged=watch))
+    return sources
+
+
 def handle_scan(args: argparse.Namespace) -> int:
     miner = SessionMiner(
         tmp_root=Path(args.tmp_root),
         claude_projects=Path(args.claude_projects),
         memories_root=Path(args.memories_root),
         lock_file=Path(args.lock_file),
+        sources=build_sources(args, watch=False),
     )
 
     logger.info(f"Scanning {args.tmp_root}...")
@@ -147,6 +172,7 @@ def handle_watch(args: argparse.Namespace) -> int:
         claude_projects=Path(args.claude_projects),
         memories_root=Path(args.memories_root),
         lock_file=Path(args.lock_file),
+        sources=build_sources(args, watch=True),
     )
     distiller = MemoryDistiller(memories_root=Path(args.memories_root)) if args.auto_distill else None
 
@@ -256,12 +282,14 @@ def handle_install_systemd(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="claudalizer",
-        description="Monitor ephemeral Claude Code sessions and distill behavioral memories.",
+        description="Monitor ephemeral Claude Code and opencode sessions and distill behavioral memories.",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging")
     parser.add_argument("--tmp-root", default=str(DEFAULT_TMP_ROOT), help="Root directory for ephemeral sessions")
     parser.add_argument("--claude-projects", default=str(DEFAULT_CLAUDE_PROJECTS), help="Claude projects storage directory")
     parser.add_argument("--memories-root", default=str(DEFAULT_MEMORIES_ROOT), help="Root directory for mined memories")
+    parser.add_argument("--source", type=_source_list, default="claude,opencode", help="Comma-separated sources to mine: claude, opencode (default: both)")
+    parser.add_argument("--opencode-db", default=None, help="Path to opencode.db (default: $OPENCODE_DB or XDG data dir)")
     parser.add_argument("--lock-file", default=str(DEFAULT_LOCK_FILE), help="File path for synchronization lock")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
