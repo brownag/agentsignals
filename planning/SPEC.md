@@ -54,7 +54,7 @@ Completed scans also update persistent scan state under the configured memories 
 `└── tests/`  
     `├── conftest.py          # Shared fixtures (mock /tmp, mock transcripts, mock sockets)`  
     `├── test_miner.py        # Slug parsing, artifact discovery, JSONL extraction`  
-    `├── test_distiller.py    # Synthesis, offline fallback, PROJECT_MEMORY.md sections, xfail targets for G18–G21`  
+    `├── test_distiller.py    # Synthesis, no-fallback rule, PROJECT_MEMORY.md sections, xfail targets for G18–G21`  
     `└── test_ipc.py          # Compositor dispatch logic and command verification`
 
 ## **3\. Module Specifications**
@@ -264,18 +264,12 @@ Each distilled session writes two things:
 #### **Synthesis**
 
 * The endpoint comes from the `--llm-endpoint` flag, or else from the environment variable `CLAUDALIZER_LLM_ENDPOINT`. The model comes from `--llm-model` unless that is the default `llama3`, in which case it comes from `CLAUDALIZER_LLM_MODEL` (default `local`). The flag wins. The environment is read at call time.
-* With an endpoint, `call_llm_completion` sends the prompt from `build_synthesis_prompt` to an OpenAI-compatible `/v1/chat/completions` endpoint, using stdlib `urllib`. The request sets `max_tokens` to 1024 and `chat_template_kwargs.enable_thinking` to false, because a reasoning model otherwise spends the whole budget on reasoning and returns no visible content. The timeout is 300 s. `temperature` is 0.2. The request carries only `Content-Type: application/json`; there is no authentication, because the endpoint is a local server. There is one attempt and no retry: a connection error, HTTP error, or empty reply returns no content, and the offline block is used. Non-empty text in the reply becomes the memory block.
-* If there is no endpoint, or the call fails or returns no content, `synthesize_offline_memory_block` builds the block from the dossier, with no network access. An empty reply is logged with a warning that names the endpoint, so the fallback is not silent.
+* With an endpoint, `call_llm_completion` sends the prompt from `build_synthesis_prompt` to an OpenAI-compatible `/v1/chat/completions` endpoint, using stdlib `urllib`. The request sets `max_tokens` to 1024 and `chat_template_kwargs.enable_thinking` to false, because a reasoning model otherwise spends the whole budget on reasoning and returns no visible content. The timeout is 300 s. `temperature` is 0.2. The request carries only `Content-Type: application/json`; there is no authentication, because the endpoint is a local server. There is one attempt and no retry: a connection error, HTTP error, or empty reply returns no content. Non-empty text in the reply becomes the memory block.
+* There is no offline fallback (decided 2026-11-25: the user never wants template output written to the memory files). If there is no endpoint, or the call fails or returns no content, nothing is written: `memory.md` and `PROJECT_MEMORY.md` stay as they were, even with `--force`. An empty reply is logged with a warning that names the endpoint. `claudalizer distill` with no endpoint logs an error and exits 2; `scan --auto-distill` and `watch` log a warning and only mine.
 
-#### **Offline block format**
+#### **Memory block format**
 
-The block starts with `# Mined Behavioral Memory for <slug>`, then a `**Source Directory:**` line, then `**Objective:** <text>`. The objective is the session's first real request (at least 15 characters, whitespace collapsed, truncated to 300 characters with `…`); with no such request it reads `not captured.`. The objective is a header line, not a section. Then three sections in this order:
-
-1. `### 1. Tool / Skill Friction`: one line per failing tool call, in the form `- **{tool}** (`{command}`): {first output line containing an error marker}`. Markers: `FAILED`, `Error`, `error:`, `error[`, `Traceback`, `panicked`, `Exception`, `command not found`, `No such file`. A call with no such line is dropped. If none remain, `- None detected.`. Repeated commands are shown once.
-2. `### 2. Blind Alleys & Discarded Spikes`: one line per scratchpad file, except scratch whose first path segment is `g3-accept` or `rewrite-check` (the claudalizer's own test runs), which is excluded. If none remain, `- No ephemeral scratchpads recorded.`
-3. `### 3. Directives for CLAUDE.md`: directives inferred from the tool errors. Three error patterns are matched (a missing Python environment, a missing binary, a Cargo error). When no error matches, or there are no errors, the section is `- None detected.`. The directives come only from the session; no boilerplate is written.
-
-An LLM block gets the same title, source, and objective lines as an offline block (`frame_llm_block`). The model writes the three sections only. If the reply already starts with `# Mined Behavioral Memory`, it is kept as is.
+`frame_llm_block` puts three header lines on the LLM reply: `# Mined Behavioral Memory for <slug>`, a `**Source Directory:**` line, then `**Objective:** <text>`. The objective is the session's first real request (at least 15 characters, whitespace collapsed, truncated to 300 characters with `…`); with no such request it reads `not captured.`. A Claude Code slash-command wrapper (`<command-name>/x</command-name>…<command-args>y</command-args>`) is read as `/x y`; one with no arguments (`/clear`, `/model`) is skipped. The model writes the three sections (`### 1. Tool / Skill Friction`, `### 2. Blind Alleys & Discarded Spikes`, `### 3. Directives for CLAUDE.md`). If the reply already starts with `# Mined Behavioral Memory`, it is kept as is.
 
 #### **PROJECT\_MEMORY.md format**
 
@@ -336,13 +330,12 @@ Tests create a `MemoryDistiller` with `memories_root=tmp_path`, and mock `call_l
 
 Characterisation tests (must pass on current code):
 
-> * **test\_offline\_block\_has\_three\_sections\_in\_order**: The three `### N.` headings appear in order in the offline block.
 > * **test\_distill\_session\_writes\_memory\_md\_and\_project\_memory**: `memory.md` exists, and `PROJECT_MEMORY.md` contains `## Session <id[:8]> Distillation`.
 > * **test\_distill\_session\_skips\_existing\_memory\_without\_force**: A second call without `force` returns the existing path and does not append again.
 > * **test\_llm\_block\_used\_when\_endpoint\_returns\_content**: With a mocked LLM reply, `memory.md` contains the reply text.
-> * **test\_offline\_fallback\_when\_llm\_returns\_nothing**: With a mocked empty reply, `memory.md` contains `# Mined Behavioral Memory`.
+> * **test\_no\_memory\_written\_when\_llm\_returns\_nothing**: With a mocked empty reply, no `memory.md` or `PROJECT_MEMORY.md` is written.
+> * **test\_no\_endpoint\_writes\_nothing\_and\_makes\_no\_call**: Without an endpoint, nothing is written and no call is made.
 > * **test\_distill\_all\_respects\_target\_slug**: With two slugs, `target_slug` limits the output to one.
-> * **test\_python\_error\_maps\_to\_venv\_directive**: A `No such file or directory` error mentioning `python` yields the virtualenv directive.
 > * **test\_synthesis\_prompt\_mentions\_errors\_and\_scratchpads**: `build_synthesis_prompt` output contains the failing command and a scratchpad path.
 
 Target behaviour (marked `xfail(strict=True)` with the goal id in the reason; each test flips to pass when its goal lands):
