@@ -11,7 +11,10 @@ import time
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Tuple
+
+if TYPE_CHECKING:
+    from claudalizer.memory_git import MemoryRepo
 
 logger = logging.getLogger(__name__)
 
@@ -375,6 +378,7 @@ class SessionMiner:
         lock_file: Path = DEFAULT_LOCK_FILE,
         sources: Optional[list] = None,
         min_remine_seconds: float = 0.0,
+        repo: Optional["MemoryRepo"] = None,
     ):
         from claudalizer.sources.claude_code import ClaudeCodeSource
 
@@ -386,6 +390,8 @@ class SessionMiner:
         self.min_remine_seconds = min_remine_seconds
         self.skipped = self._empty_skips()
         self.pass_log: List[str] = []
+        self.repo = repo
+        self.last_commit: Optional[str] = None
 
     @staticmethod
     def _empty_skips() -> Dict[str, Any]:
@@ -407,7 +413,11 @@ class SessionMiner:
         self.skipped = self._empty_skips()
         self.pass_log = []
 
+        self.last_commit = None
         with file_lock(self.lock_file):
+            if self.repo is not None:
+                self.repo.ensure()
+                self.repo.commit_external("scan")
             for source in self.sources:
                 try:
                     for ref in source.iter_sessions(target_slug):
@@ -420,8 +430,21 @@ class SessionMiner:
                             dossiers.append(dossier)
                 except Exception as e:
                     logger.warning("Session source %s failed: %s", source.name, e)
+            if self.repo is not None and self.pass_log:
+                self.last_commit = self.repo.commit_pass(self._scan_commit_title(force), list(self.pass_log))
 
         return dossiers
+
+    def _scan_commit_title(self, force: bool) -> str:
+        mined = sum(1 for entry in self.pass_log if entry.startswith("mined "))
+        remined = len(self.pass_log) - mined
+        parts = []
+        if mined:
+            parts.append(f"{mined} mined")
+        if remined:
+            parts.append(f"{remined} re-mined")
+        title = "scan: " + ", ".join(parts)
+        return title + " (--force)" if force else title
 
     def _mine_session(
         self,
