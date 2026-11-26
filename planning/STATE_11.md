@@ -1,7 +1,7 @@
 # Orchestration 11 State (`planning/STATE_11.md`)
 
 Plan: `planning/EXECUTION_PLAN_11.md` (opencode session source)
-Status: Waves 1-2 done. Wave 3 in progress.
+Status: Waves 1-3 done. Wave 4 in progress.
 Last Updated: 2026-11-25
 
 ## Pre-wave checklist
@@ -19,7 +19,7 @@ Last Updated: 2026-11-25
 | 2 | T11.2.1 Core loop over sources | done | 6236c26 | worktree |
 | 2 | T11.2.2 opencode extraction functions | done | be05dc9 | worktree |
 | 2 | T11.2.3 Schema guard module | done | 5971135 | worktree |
-| 3 | T11.3.1 OpencodeSource discovery and settle | pending | | |
+| 3 | T11.3.1 OpencodeSource discovery and settle | done | 636d531 | |
 | 4 | T11.4.1 Family extract, source_meta, pre-check | pending | | |
 | 5 | T11.5.1 CLI flags and source wiring | pending | | worktree |
 | 5 | T11.5.2 README and AGENTS docs | pending | | worktree |
@@ -75,3 +75,15 @@ Last Updated: 2026-11-25
 - Cherry-picked wt/11.2.1 `be663a7` -> `6236c26`, wt/11.2.2 `9312204` -> `be05dc9`, wt/11.2.3 `a57b35e` -> `5971135`.
 - `make check`: ruff clean, 126 passed. Existing test files diff vs `9b7d71d` empty.
 - Review notes: `scratchpad_changed_since` in miner.py is no longer called by the core (kept; out of scope to delete). Workers added two extra tests (`test_bad_json_rows_skipped`, `test_known_migration_is_quiet`).
+
+## T11.3.1
+- Status: done.
+- Files: claudalizer/sources/opencode.py (imports; new tail: _MARKER_SQL, _now, _find_root, OpencodeSource), tests/test_opencode_source.py (+7 tests, helpers at end).
+- Commit: see `git log -1 --grep="find settled opencode"`.
+- Tests: `python -m pytest tests/test_opencode_source.py -q` 18 passed; `ruff check claudalizer tests` clean.
+- Deviations: none. skipped["up_to_date"] is an int, skipped["active"] a list of "slug/id".
+- Gotchas for T11.4.1: `self._families` is reset per iter_sessions: `{root_id: [{"id","directory","time_created"}, ...]}`, root first. Marker per member is not stored. extract() is a root-only stub reopening the DB via open_readonly; touched_files is filled from extract_session. skip_if_unchanged stored as `self.skip_if_unchanged`, unused. Exceptions in iter_sessions are swallowed by the core (logged warning).
+
+## Wave 3 gate (orchestrator)
+- `make check`: ruff clean, 133 passed. Existing test files diff vs `9b7d71d` empty.
+- Review note: a parent loop (A->B->A) splits into two roots under the "stop at last row reached" rule; acceptable per SPEC, but each loop member becomes its own family.
