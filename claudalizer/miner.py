@@ -46,6 +46,9 @@ class SessionDossier:
     scratchpad_files: List[str] = field(default_factory=list)
     skipped_files: List[Dict[str, Any]] = field(default_factory=list)
     stats: Dict[str, Any] = field(default_factory=dict)
+    source: str = "claude_code"
+    touched_files: List[str] = field(default_factory=list)
+    source_meta: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -146,7 +149,7 @@ def is_file_settled(file_path: Path, min_age_seconds: float = SETTLE_DEBOUNCE_SE
         return False
 
 
-EXIT_CODE_PATTERN = re.compile(r"Exit code (\d+)")
+EXIT_CODE_PATTERN = re.compile(r"Exit code:? (\d+)")
 
 
 def has_nonzero_exit_code(text: str) -> bool:
