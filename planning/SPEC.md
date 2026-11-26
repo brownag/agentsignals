@@ -187,7 +187,7 @@ Dossier changes (both sources): `source` (default `"claude_code"`), `touched_fil
 *Schema guard*, run at each open before any other query:
 
 - Each table in the table below, and each column the adapter reads, must exist (`pragma table_info`). If any is missing, log one warning per process naming the missing items and skip the source.
-- `SELECT id FROM migration ORDER BY id DESC LIMIT 1` is compared with `KNOWN_OPENCODE_MIGRATION = "20261120004954_machine-key"`. If the latest id sorts after it, log one warning per process and keep reading. Record the id in `source_meta.schema_migration`.
+- `SELECT id FROM migration ORDER BY id DESC LIMIT 1` (an empty table counts as an unknown migration, recorded as `""`) is compared with `KNOWN_OPENCODE_MIGRATION = "20261120004954_machine-key"`. If the latest id sorts after it, log one warning per process and keep reading. Record the id in `source_meta.schema_migration`.
 - A `sqlite3.Error` at any point logs a warning and skips the source for this scan.
 - A row whose `data` is not valid JSON is skipped. Every JSON field is read with `.get`, because older part shapes exist (R§2, R§6).
 
@@ -222,7 +222,7 @@ using correlated subqueries on the `session_id` indexes. It took about 20 ms war
 
 This changes only what the existing settle window is compared against; the window stays 2 s.
 
-*Watch pre-check.* `watch` keeps the mtimes of the database file and its `-wal` file from the previous tick. When neither changed, it skips the opencode queries for that tick. `scan` always queries.
+*Watch pre-check.* `watch` keeps the mtimes of the database file and its `-wal` file from the previous tick. It skips the opencode queries for a tick only when neither mtime changed **and** the previous pass found no unsettled family. A busy or unmarked family settles with the passage of time, not with a database write, so it must keep being re-checked until it is mined. `scan` always queries.
 
 *Extraction*, per family member, ordered by member `time_created` with the root first:
 
@@ -366,7 +366,9 @@ Target behaviour (marked `xfail(strict=True)` with the goal id in the reason; ea
 
 Criterion 5 of GOALS.md G15 (the format is written down) is checked by the grep acceptance for this spec, not by a test.
 
-### **4.1a opencode source (test\_opencode\_source.py)**
+### **4.1a opencode source (test\_opencode\_\*.py, test\_source\_core.py)**
+
+The tests live in four files: `test_source_core.py` (the core loop and the split), `test_opencode_fixture.py`, `test_opencode_source.py` (the reader and the source), and `test_opencode_schema.py` (the guard in `claudalizer/sources/opencode_schema.py`). Guard tests that need a whole scan (`test_missing_column_skips_source_with_warning`, `test_corrupt_db_does_not_stop_scan`, `test_db_opened_read_only`) live in `test_opencode_source.py`; unit tests of the open function live in `test_opencode_schema.py`. An autouse fixture in `tests/conftest.py` points `OPENCODE_DB` and `XDG_DATA_HOME` at missing paths under `tmp_path`. `SessionMiner()` defaults to the Claude Code source only; `cli.py` adds opencode.
 
 Tests build the database in `tmp_path` with `tests/opencode_fixture.py`, which creates the tables and columns in the §3.1 table plus a `migration` row. It has helpers for adding sessions, messages and part rows. No test opens the real `opencode.db`. All existing `tests/test_miner.py` tests pass unchanged after the source split (G_oc-seam).
 
@@ -403,6 +405,7 @@ CLI and integration (G_oc-cli):
 > * **test\_source\_flag\_limits\_sources**: `--source claude` never opens the database; an unknown name is rejected.
 > * **test\_opencode\_db\_resolution\_order**: The flag wins over `OPENCODE_DB`, which wins over `XDG_DATA_HOME`.
 > * **test\_watch\_skips\_queries\_when\_db\_unchanged**: Unchanged database and `-wal` mtimes mean no opencode query on that tick.
+> * **test\_watch\_rechecks\_while\_family\_unsettled**: With unchanged mtimes, a family that was active on the last pass is checked again, and it is mined once it is quiet for 600 s.
 > * **test\_both\_sources\_share\_project\_memory**: A Claude Code session and an opencode session for the same directory both appear in one `PROJECT_MEMORY.md` after distill.
 
 ### **4.3 IPC & Environments (test\_ipc.py)**
