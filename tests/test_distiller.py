@@ -420,3 +420,99 @@ def test_llm_failure_makes_one_attempt_and_returns_none(monkeypatch):
 
     assert out is None
     assert len(calls) == 1
+
+
+class FakeRepo:
+    def __init__(self):
+        self.externals = []
+        self.passes = []
+
+    def commit_external(self, before):
+        self.externals.append(before)
+        return "ext1234"
+
+    def commit_pass(self, title, lines):
+        self.passes.append((title, list(lines)))
+        return "abc1234"
+
+
+def test_distill_all_commits_one_pass_with_lines(tmp_path, fake_llm):
+    root = tmp_path / "mem"
+    _write_dossier(root, "-demo", "s1", _dossier(session_id="s1"))
+    _write_dossier(root, "-demo", "s2", _dossier(session_id="s2"))
+    repo = FakeRepo()
+
+    MemoryDistiller(root, repo=repo).distill_all(llm_endpoint=EP)
+
+    assert len(repo.passes) == 1
+    title, lines = repo.passes[0]
+    assert title == "distill: 2 distilled"
+    assert sorted(lines) == ["distilled -demo/s1", "distilled -demo/s2"]
+
+
+def test_forced_redistill_is_marked_in_pass_log(tmp_path, fake_llm):
+    root = tmp_path / "mem"
+    _write_dossier(root, "-demo", "s1", _dossier(session_id="s1"))
+    distiller = MemoryDistiller(root, repo=FakeRepo())
+    distiller.distill_session("-demo", "s1", llm_endpoint=EP)
+    distiller.distill_session("-demo", "s1", llm_endpoint=EP, force=True)
+
+    assert distiller.pass_log == ["distilled -demo/s1", "re-distilled (--force) -demo/s1"]
+    assert distiller.commit_pass() == "abc1234"
+    assert distiller.repo.passes[-1][0] == "distill: 2 distilled (--force)"
+
+
+def test_no_commit_when_nothing_written(tmp_path, fake_llm, monkeypatch):
+    root = tmp_path / "mem"
+    _write_dossier(root, "-demo", "s1", _dossier(session_id="s1"))
+    repo = FakeRepo()
+
+    MemoryDistiller(root, repo=repo).distill_all(llm_endpoint=None)
+    assert repo.passes == []
+    assert repo.externals == []
+
+    monkeypatch.setattr(distiller_mod, "call_llm_completion", lambda *a, **k: None)
+    MemoryDistiller(root, repo=repo).distill_all(llm_endpoint=EP)
+    assert repo.passes == []
+
+
+def test_lock_not_held_during_llm_call(tmp_path, monkeypatch):
+    from claudalizer.miner import file_lock
+
+    root = tmp_path / "mem"
+    lock = tmp_path / "miner.lock"
+    _write_dossier(root, "-demo", "s1", _dossier(session_id="s1"))
+    seen = []
+
+    def _llm_that_takes_the_lock(prompt, **_kwargs):
+        with file_lock(lock, timeout=0.2) as acquired:
+            seen.append(acquired)
+        return LLM_SECTIONS
+
+    monkeypatch.setattr(distiller_mod, "call_llm_completion", _llm_that_takes_the_lock)
+    MemoryDistiller(root, lock_file=lock).distill_all(llm_endpoint=EP)
+
+    assert seen == [True]
+    assert (root / "-demo" / "s1" / "memory.md").exists()
+
+
+def test_external_commit_once_per_pass(tmp_path, fake_llm):
+    root = tmp_path / "mem"
+    _write_dossier(root, "-demo", "s1", _dossier(session_id="s1"))
+    _write_dossier(root, "-demo", "s2", _dossier(session_id="s2"))
+    repo = FakeRepo()
+
+    MemoryDistiller(root, repo=repo).distill_all(llm_endpoint=EP)
+
+    assert repo.externals == ["distill"]
+
+
+def test_without_repo_behaviour_unchanged(tmp_path, fake_llm):
+    root = tmp_path / "mem"
+    _write_dossier(root, "-demo", "s1", _dossier(session_id="s1"))
+
+    written = MemoryDistiller(root).distill_all(llm_endpoint=EP)
+
+    assert len(written) == 1
+    assert (root / "-demo" / "PROJECT_MEMORY.md").exists()
+    assert not (root / ".git").exists()
