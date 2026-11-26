@@ -1,7 +1,7 @@
 # Orchestration 11 State (`planning/STATE_11.md`)
 
 Plan: `planning/EXECUTION_PLAN_11.md` (opencode session source)
-Status: Waves 1-3 done. Wave 4 in progress.
+Status: Waves 1-4 done. Wave 5 in progress.
 Last Updated: 2026-11-25
 
 ## Pre-wave checklist
@@ -20,7 +20,7 @@ Last Updated: 2026-11-25
 | 2 | T11.2.2 opencode extraction functions | done | be05dc9 | worktree |
 | 2 | T11.2.3 Schema guard module | done | 5971135 | worktree |
 | 3 | T11.3.1 OpencodeSource discovery and settle | done | 636d531 | |
-| 4 | T11.4.1 Family extract, source_meta, pre-check | pending | | |
+| 4 | T11.4.1 Family extract, source_meta, pre-check | done | ac06c88 | |
 | 5 | T11.5.1 CLI flags and source wiring | pending | | worktree |
 | 5 | T11.5.2 README and AGENTS docs | pending | | worktree |
 
@@ -87,3 +87,15 @@ Last Updated: 2026-11-25
 ## Wave 3 gate (orchestrator)
 - `make check`: ruff clean, 133 passed. Existing test files diff vs `9b7d71d` empty.
 - Review note: a parent loop (A->B->A) splits into two roots under the "stop at last row reached" rule; acceptable per SPEC, but each loop member becomes its own family.
+
+## T11.4.1
+- Status: done.
+- Files: claudalizer/sources/opencode.py (OpencodeSource: __init__ state, _db_mtimes, iter_sessions pre-check + child sort, extract rewritten, ~272-375), tests/test_opencode_source.py (+8 tests and _family/_spy helpers appended at end).
+- Commit: ac06c88 feat(sources): fold opencode subagents into their root and skip unchanged polls.
+- Tests: python -m pytest tests/test_opencode_source.py tests/test_opencode_schema.py tests/test_source_core.py -q -> 42 passed. ruff check claudalizer tests clean.
+- Deviations: none. Per orchestrator, mtimes + had_unsettled are committed to self only after the generator yields every ref (aborted pass stays stale). Unsettled families filtered out by target_slug do not count. open_readonly None inside iter_sessions returns without storing state.
+- Gotchas for T11.5.1: constructor is OpencodeSource(db_path, skip_if_unchanged=False); source name "opencode"; extract raises RuntimeError if DB unavailable (core logs). Pre-check state is per instance, so build one OpencodeSource per watch process (not per tick). distill_all not exercised; distill_session works on opencode dossier offline.
+
+## Wave 4 gate (orchestrator)
+- `make check`: ruff clean, 141 passed. Existing test files diff vs `9b7d71d` empty.
+- For T11.5.1: `handle_watch` builds `SessionMiner` once outside the loop, so the pre-check state on the one `OpencodeSource` persists across ticks.
