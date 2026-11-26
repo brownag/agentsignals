@@ -242,3 +242,66 @@ def test_watch_without_endpoint_does_not_distill(tmp_path, monkeypatch, caplog):
     assert cli.handle_watch(args) == 0
     assert calls == []
     assert "No LLM endpoint set" in caplog.text
+
+
+def test_no_git_flag_disables_repo(tmp_path):
+    root = str(tmp_path / "memories")
+    parser = cli.build_parser()
+    assert cli.build_repo(parser.parse_args(["--memories-root", root, "scan"])).enabled is True
+    assert cli.build_repo(parser.parse_args(["--memories-root", root, "--no-git", "scan"])).enabled is False
+
+
+def test_watch_passes_repo_and_min_remine(tmp_path, monkeypatch):
+    seen = {}
+
+    class FakeMiner:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+        def scan_and_mine(self, **kwargs):
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli, "SessionMiner", FakeMiner)
+    args = _args(tmp_path, "watch")
+    args.source = ["claude"]
+    assert cli.handle_watch(args) == 0
+
+    assert seen["min_remine_seconds"] == 60.0
+    assert seen["repo"].root == tmp_path / "memories"
+    assert seen["repo"].enabled is True
+
+
+def test_scan_then_distill_makes_scan_and_distill_commits(tmp_path, fake_llm):
+    import os
+    import subprocess
+    import time
+
+    tmp_root = tmp_path / "tmp_claude"
+    projects = tmp_path / "projects"
+    slug = "-home-andrew-AI-demo"
+    scratch = tmp_root / slug / "cli-sess" / "scratchpad"
+    scratch.mkdir(parents=True)
+    (scratch / "probe.py").write_text("# probe", encoding="utf-8")
+    (projects / slug).mkdir(parents=True)
+    (projects / slug / "cli-sess.jsonl").write_text(
+        json.dumps({"type": "user", "message": {"content": "Distill this after the scan"}}) + "\n",
+        encoding="utf-8",
+    )
+    old = time.time() - 100
+    for p in (scratch / "probe.py", scratch, scratch.parent, tmp_root / slug, projects / slug / "cli-sess.jsonl"):
+        os.utime(p, (old, old))
+
+    args = _args(tmp_path, "scan", "--no-debounce", "--auto-distill",
+                 "--llm-endpoint", "http://127.0.0.1:9/v1")
+    args.source = ["claude"]
+    args.auto_distill = True
+    args.tmp_root = str(tmp_root)
+    args.claude_projects = str(projects)
+    assert cli.handle_scan(args) == 0
+
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    subjects = subprocess.run(
+        ["git", "log", "--format=%s"], cwd=tmp_path / "memories", env=env,
+        capture_output=True, text=True, check=True,
+    ).stdout.splitlines()
+    assert subjects == ["distill: 1 distilled", "scan: 1 mined", "baseline: existing memories"]

@@ -118,3 +118,10 @@ def test_format_skip_summary_with_nothing_skipped():
     assert text.splitlines() == [
         "Skipped: 0 active (still changing; picked up on a later scan), 0 already up to date, 0 with no content."
     ]
+
+
+def test_format_skip_summary_mentions_recent_only_when_nonzero():
+    base = {"active": [], "up_to_date": 0, "no_content": 0}
+    assert "less than" not in format_skip_summary({**base, "recent": 0})
+    assert "less than" not in format_skip_summary(base)
+    assert "2 re-mined less than 60 s ago" in format_skip_summary({**base, "recent": 2})

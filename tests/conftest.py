@@ -39,3 +39,9 @@ def fake_llm(monkeypatch):
 
     monkeypatch.setattr(distiller, "call_llm_completion", _reply)
     return prompts
+
+
+@pytest.fixture(autouse=True)
+def _tests_never_touch_real_memories(monkeypatch):
+    """Let memory_git refuse the real memories root while tests run."""
+    monkeypatch.setenv("CLAUDALIZER_TESTING", "1")

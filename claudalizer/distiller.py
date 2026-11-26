@@ -7,6 +7,7 @@ import re
 import tempfile
 import urllib.error
 import urllib.request
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -189,10 +190,26 @@ def frame_llm_block(dossier_data: Dict[str, Any], llm_text: str) -> str:
 
 
 class MemoryDistiller:
-    """Ingests dossiers and distills actionable memory blocks."""
+    """Ingests dossiers and distills actionable memory blocks.
 
-    def __init__(self, memories_root: Path = DEFAULT_MEMORIES_ROOT):
+    With lock_file set, writes happen under the mining lock. The LLM call never does.
+    With repo set, each pass that wrote files ends in one commit (see commit_pass).
+    """
+
+    def __init__(self, memories_root: Path = DEFAULT_MEMORIES_ROOT, repo: Any = None,
+                 lock_file: Optional[Path] = None):
         self.memories_root = Path(memories_root)
+        self.repo = repo
+        self.lock_file = Path(lock_file) if lock_file is not None else None
+        self.pass_log: List[str] = []
+        self._external_done = False
+
+    def _write_lock(self):
+        if self.lock_file is None:
+            return nullcontext()
+        from claudalizer.miner import file_lock
+
+        return file_lock(self.lock_file)
 
     def distill_session(
         self,
@@ -224,18 +241,43 @@ class MemoryDistiller:
         with open(dossier_json, "r", encoding="utf-8") as f:
             dossier_data = json.load(f)
 
+        # The LLM call runs outside the lock so the watcher is never blocked by it.
         content = call_llm_completion(build_synthesis_prompt(dossier_data), endpoint=llm_endpoint, model=llm_model)
         if not content:
             return None
         content = frame_llm_block(dossier_data, content)
 
-        with open(memory_md, "w", encoding="utf-8") as f:
-            f.write(content + "\n")
+        was_forced = memory_md.exists()
+        with self._write_lock():
+            if self.repo is not None and not self._external_done:
+                self.repo.ensure()
+                self.repo.commit_external("distill")
+                self._external_done = True
 
-        # Also update / append to project-level aggregated memory
-        self._append_to_project_memory(slug, content, session_id)
+            with open(memory_md, "w", encoding="utf-8") as f:
+                f.write(content + "\n")
+
+            # Also update / append to project-level aggregated memory
+            self._append_to_project_memory(slug, content, session_id)
+
+        if was_forced:
+            self.pass_log.append(f"re-distilled (--force) {slug}/{session_id}")
+        else:
+            self.pass_log.append(f"distilled {slug}/{session_id}")
 
         return memory_md
+
+    def commit_pass(self, kind: str = "distill") -> Optional[str]:
+        """Commit the files written since the last commit. Returns the short sha, or None."""
+        if self.repo is None or not self.pass_log:
+            return None
+        forced = any("(--force)" in entry for entry in self.pass_log)
+        summary = f"{len(self.pass_log)} distilled" + (" (--force)" if forced else "")
+        lines = list(self.pass_log)
+        self.pass_log = []
+        self._external_done = False
+        with self._write_lock():
+            return self.repo.commit_pass(f"{kind}: {summary}", lines)
 
     def _append_to_project_memory(self, slug: str, memory_block: str, session_id: str) -> None:
         """Rebuild ~/.claude-mined-memories/<slug>/PROJECT_MEMORY.md from every session's memory.md.
@@ -311,4 +353,5 @@ class MemoryDistiller:
                 if res:
                     distilled.append(res)
 
+        self.commit_pass()
         return distilled

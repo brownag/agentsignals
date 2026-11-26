@@ -1,6 +1,7 @@
 """Core scanning, snapshotting, and extraction engine for claudalizer."""
 
 import fcntl
+import hashlib
 import json
 import logging
 import os
@@ -10,7 +11,10 @@ import time
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Tuple
+
+if TYPE_CHECKING:
+    from claudalizer.memory_git import MemoryRepo
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +26,8 @@ DEFAULT_LOCK_FILE = Path("/tmp/claudalizer.lock")
 MAX_SCRATCHPAD_FILE_BYTES = 250 * 1024  # 250 KB
 MIN_PROMPT_LENGTH = 15
 SETTLE_DEBOUNCE_SECONDS = 2.0
+# The watch loop does not re-mine a session whose dossier is younger than this.
+WATCH_MIN_REMINE_SECONDS = 60.0
 
 
 @dataclass
@@ -341,6 +347,28 @@ def snapshot_scratchpad(
     return copied_files, skipped
 
 
+def _tree_digest(path: Path) -> str:
+    """Hash the relative paths and bytes of every file under path. Empty string if missing."""
+    if not path.is_dir():
+        return ""
+    digest = hashlib.sha256()
+    for item in sorted(p for p in path.rglob("*") if p.is_file()):
+        digest.update(item.relative_to(path).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(item.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _load_dossier_dict(dossier_json: Path) -> Optional[Dict[str, Any]]:
+    try:
+        with open(dossier_json, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 class SessionMiner:
     """Scans ephemeral session directories, correlates with transcripts, and builds dossiers."""
 
@@ -351,6 +379,8 @@ class SessionMiner:
         memories_root: Path = DEFAULT_MEMORIES_ROOT,
         lock_file: Path = DEFAULT_LOCK_FILE,
         sources: Optional[list] = None,
+        min_remine_seconds: float = 0.0,
+        repo: Optional["MemoryRepo"] = None,
     ):
         from claudalizer.sources.claude_code import ClaudeCodeSource
 
@@ -359,11 +389,15 @@ class SessionMiner:
         self.memories_root = Path(memories_root)
         self.lock_file = Path(lock_file)
         self.sources = sources if sources is not None else [ClaudeCodeSource(self.tmp_root, self.claude_projects)]
+        self.min_remine_seconds = min_remine_seconds
         self.skipped = self._empty_skips()
+        self.pass_log: List[str] = []
+        self.repo = repo
+        self.last_commit: Optional[str] = None
 
     @staticmethod
     def _empty_skips() -> Dict[str, Any]:
-        return {"active": [], "up_to_date": 0, "no_content": 0}
+        return {"active": [], "up_to_date": 0, "no_content": 0, "recent": 0}
 
     def scan_and_mine(
         self,
@@ -379,8 +413,13 @@ class SessionMiner:
         """
         dossiers: List[SessionDossier] = []
         self.skipped = self._empty_skips()
+        self.pass_log = []
 
+        self.last_commit = None
         with file_lock(self.lock_file):
+            if self.repo is not None:
+                self.repo.ensure()
+                self.repo.commit_external("scan")
             for source in self.sources:
                 try:
                     for ref in source.iter_sessions(target_slug):
@@ -393,8 +432,21 @@ class SessionMiner:
                             dossiers.append(dossier)
                 except Exception as e:
                     logger.warning("Session source %s failed: %s", source.name, e)
+            if self.repo is not None and self.pass_log:
+                self.last_commit = self.repo.commit_pass(self._scan_commit_title(force), list(self.pass_log))
 
         return dossiers
+
+    def _scan_commit_title(self, force: bool) -> str:
+        mined = sum(1 for entry in self.pass_log if entry.startswith("mined "))
+        remined = len(self.pass_log) - mined
+        parts = []
+        if mined:
+            parts.append(f"{mined} mined")
+        if remined:
+            parts.append(f"{remined} re-mined")
+        title = "scan: " + ", ".join(parts)
+        return title + " (--force)" if force else title
 
     def _mine_session(
         self,
@@ -433,7 +485,11 @@ class SessionMiner:
         dossier_dir = self.memories_root / slug / session_id
         dossier_json = dossier_dir / "dossier.json"
 
-        if dossier_json.exists() and not force:
+        existed = dossier_json.exists()
+        if existed and not force:
+            if self.min_remine_seconds > 0 and time.time() - dossier_json.stat().st_mtime < self.min_remine_seconds:
+                self.skipped["recent"] += 1
+                return None
             if ref.changed_at <= dossier_json.stat().st_mtime:
                 logger.debug(f"Dossier {dossier_json} already up to date. Skipping.")
                 self.skipped["up_to_date"] += 1
@@ -443,8 +499,10 @@ class SessionMiner:
         ex = source.extract(ref)
         user_prompts, tool_errors = ex.user_prompts, ex.tool_errors
 
+        scratch_copy = dossier_dir / "scratchpad"
+        digest_before = _tree_digest(scratch_copy)
         if ex.scratchpad_dir is not None:
-            copied_files, skipped_files = snapshot_scratchpad(ex.scratchpad_dir, dossier_dir / "scratchpad")
+            copied_files, skipped_files = snapshot_scratchpad(ex.scratchpad_dir, scratch_copy)
         else:
             copied_files, skipped_files = [], []
 
@@ -475,6 +533,19 @@ class SessionMiner:
             source_meta=ex.source_meta,
         )
 
+        if existed and not force:
+            stored = _load_dossier_dict(dossier_json)
+            new_dict = dossier.to_dict()
+            if stored is not None and _tree_digest(scratch_copy) == digest_before:
+                stored_cmp = {k: v for k, v in stored.items() if k != "scan_timestamp"}
+                new_cmp = {k: v for k, v in new_dict.items() if k != "scan_timestamp"}
+                if stored_cmp == new_cmp:
+                    # Nothing changed: keep the bytes, but bump mtime so the up-to-date check holds.
+                    os.utime(dossier_json)
+                    self.skipped["up_to_date"] += 1
+                    logger.debug(f"Dossier for {slug}/{session_id} unchanged. Not rewritten.")
+                    return None
+
         dossier_dir.mkdir(parents=True, exist_ok=True)
         # Write to a temp file, sync it, then rename over the old dossier so a crash
         # never leaves a half-written dossier.json.
@@ -488,6 +559,13 @@ class SessionMiner:
         except BaseException:
             tmp_json.unlink(missing_ok=True)
             raise
+
+        if not existed:
+            self.pass_log.append(f"mined {slug}/{session_id}")
+        elif force:
+            self.pass_log.append(f"re-mined (--force) {slug}/{session_id}")
+        else:
+            self.pass_log.append(f"re-mined {slug}/{session_id}")
 
         logger.info(f"Mined dossier for {slug}/{session_id}: {len(tool_errors)} errors, {len(copied_files)} files.")
         return dossier

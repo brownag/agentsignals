@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 import time
@@ -216,6 +217,17 @@ def test_part_update_triggers_remine(tmp_path):
     conn.execute("UPDATE session_part SET time_updated=?", (int((old + 20) * 1000),))
     conn.commit()
     conn.close()
+    # A timestamp-only change re-mines, but the content is the same, so the dossier is kept.
+    assert m.scan_and_mine() == []
+    assert m.skipped["up_to_date"] == 1
+
+    # A real content change still produces a new dossier.
+    conn = sqlite3.connect(str(db.path))
+    conn.execute("UPDATE session_message SET data=? WHERE type='user'",
+                 (json.dumps({"text": LONG + " (edited)"}),))
+    conn.commit()
+    conn.close()
+    os.utime(_dossier(tmp_path), (old, old))
     assert len(m.scan_and_mine()) == 1
 
 
