@@ -1,7 +1,7 @@
 # Orchestration 11 State (`planning/STATE_11.md`)
 
 Plan: `planning/EXECUTION_PLAN_11.md` (opencode session source)
-Status: Waves 1-4 done. Wave 5 in progress.
+Status: All waves done (2026-11-25). G_oc-live not started (needs user approval, D6).
 Last Updated: 2026-11-25
 
 ## Pre-wave checklist
@@ -21,8 +21,8 @@ Last Updated: 2026-11-25
 | 2 | T11.2.3 Schema guard module | done | 5971135 | worktree |
 | 3 | T11.3.1 OpencodeSource discovery and settle | done | 636d531 | |
 | 4 | T11.4.1 Family extract, source_meta, pre-check | done | ac06c88 | |
-| 5 | T11.5.1 CLI flags and source wiring | pending | | worktree |
-| 5 | T11.5.2 README and AGENTS docs | pending | | worktree |
+| 5 | T11.5.1 CLI flags and source wiring | done | 5c4416c | worktree |
+| 5 | T11.5.2 README and AGENTS docs | done | c6da459 | worktree |
 
 ## Task reports
 
@@ -99,3 +99,25 @@ Last Updated: 2026-11-25
 ## Wave 4 gate (orchestrator)
 - `make check`: ruff clean, 141 passed. Existing test files diff vs `9b7d71d` empty.
 - For T11.5.1: `handle_watch` builds `SessionMiner` once outside the loop, so the pre-check state on the one `OpencodeSource` persists across ticks.
+
+## T11.5.1
+- Status: done.
+- Files: claudalizer/cli.py (imports, _source_list/build_sources before handle_scan, sources= in scan/watch, --source/--opencode-db/description in build_parser), tests/test_cli.py (+3 tests appended).
+- Commit: 3bc8076 feat(cli): add --source and --opencode-db and mine opencode by default.
+- Tests: python -m pytest tests/test_cli.py -q -> 11 passed. ruff check cli.py test_cli.py clean.
+- Deviations: none. Source list is deduped. distill_all worked on the mixed dossiers.
+- Gotchas: --source is a global flag (before the subcommand). argparse applies the type fn to the string default, so args.source is a list.
+
+## T11.5.2
+- Status: done
+- Files: README.md (new "## opencode Sessions" section before Waybar example); AGENTS.md (Find Things, Infrastructure, Non-Obvious, Never)
+- Commit: d9d9220
+- Commands: git diff --check (clean); grep -c opencode README.md AGENTS.md (6, 6); make test (141 passed)
+- Deviations: skipped the optional intro one-liner in Key Features; the new section covers it. Makefile-check item skipped per orchestrator. Used "claudalizer --source claude scan" (global flag before command).
+
+## Wave 5 gate and final (orchestrator)
+- Cherry-picked wt/11.5.1 `3bc8076` -> `5c4416c`, wt/11.5.2 `d9d9220` -> `c6da459`.
+- `make check`: ruff clean, 144 passed (baseline 96). `git diff --stat 9b7d71d -- tests/test_miner.py tests/test_scan_report.py` empty; `tests/test_cli.py` only gained tests.
+- `make systemd-dry-run` exits 0; watch unit still `ExecStart=.../claudalizer watch`.
+- Flag names agree between SPEC §3.4 and `cli.py` (`--source`, `--opencode-db`, both global, before the subcommand).
+- Follow-ups (not done): G_oc-live needs `make install-user` (installed CLI is not editable) and user approval. `scratchpad_changed_since` in miner.py is now unused by the core.

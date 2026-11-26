@@ -2,7 +2,7 @@
 
 Orchestration: 11
 Source: Magic Wand re-rank 2026-11-25. Goals G_oc-seam, G_oc-fixture, G_oc-read, G_oc-guard and G_oc-cli in `planning/GOALS.md`. Spec: `planning/SPEC.md` §3.1 *Session sources* and *opencode source*, §3.4 global flags, §4.1a. Research: `planning/research/OPENCODE_SESSIONS.md`.
-Status: Approved by user (2026-11-25). Implementation not started.
+Status: Approved by user (2026-11-25). Implemented; all waves done 2026-11-25.
 Base branch: `feat/opencode-source`, created from `docs/opencode-goal` at `9b7d71d`. Planning is tracked (D5).
 Baseline: `make check`: ruff clean, 96 passed (Python 3.12.3). `make systemd-dry-run` exits 0.
 
