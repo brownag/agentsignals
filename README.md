@@ -93,6 +93,33 @@ systemctl --user enable --now claudalizer-watch.service
 
 ---
 
+## opencode Sessions
+
+claudalizer also mines [opencode](https://opencode.ai) sessions from its SQLite database. It mines user prompts, tool errors, failed shell commands, failed turns and the paths of touched files. It does not keep file content.
+
+The database path is resolved in this order: the `--opencode-db` flag, the `OPENCODE_DB` environment variable, then `$XDG_DATA_HOME/opencode/opencode.db` (default `~/.local/share/opencode/opencode.db`). Databases for other release channels (`opencode-<channel>.db`) are not found automatically. Pass them with `--opencode-db`.
+
+Access is read-only. claudalizer never writes to the database.
+
+Subagent sessions are folded into their parent session, so each session family produces one dossier.
+
+opencode and Claude Code sessions for the same directory share one `PROJECT_MEMORY.md`.
+
+```bash
+# Default: mine both sources
+claudalizer scan
+
+# Mine only Claude Code sessions (the database is never opened)
+claudalizer --source claude scan
+
+# Use a database from another release channel
+claudalizer --opencode-db ~/.local/share/opencode/opencode-dev.db scan
+```
+
+`--source` takes a comma-separated list from `claude,opencode`. The default is `claude,opencode`. Both flags are global options and go before the command.
+
+---
+
 ## Waybar Configuration Example
 
 Add a custom module in `~/.config/waybar/config`:
