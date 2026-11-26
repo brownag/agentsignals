@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 MODULE_NAME = "custom/agent-signals"
-STATUS_FILE = "/tmp/claudalizer_status.json"
+STATUS_FILE = "/tmp/agentsignals_status.json"
 
 MODULE_BLOCK = f'''    "{MODULE_NAME}": {{
         "format": "{{}}",
@@ -90,7 +90,7 @@ def patch_waybar_config(config_path: Optional[Path], dry_run: bool = False) -> s
         return "missing"
 
     text = config_path.read_text(encoding="utf-8")
-    if f'"{MODULE_NAME}"' in text or '"custom/claudalizer"' in text:
+    if f'"{MODULE_NAME}"' in text or '"custom/agentsignals"' in text:
         return "present"
     edited = _insert_module(text)
     if edited is None:

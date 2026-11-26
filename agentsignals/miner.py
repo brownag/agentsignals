@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_TMP_ROOT = Path("/tmp/claude-1000")
 DEFAULT_CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
 DEFAULT_MEMORIES_ROOT = Path.home() / ".claude-mined-memories"
-DEFAULT_LOCK_FILE = Path("/tmp/claudalizer.lock")
+DEFAULT_LOCK_FILE = Path("/tmp/agentsignals.lock")
 
 MAX_SCRATCHPAD_FILE_BYTES = 250 * 1024  # 250 KB
 MIN_PROMPT_LENGTH = 15

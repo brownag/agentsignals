@@ -36,7 +36,6 @@ dev = [
 
 [project.scripts]
 agent-signals = "agentsignals.cli:main"
-claudalizer = "agentsignals.cli:legacy_main"
 
 [tool.setuptools.packages.find]
 where = ["."]

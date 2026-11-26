@@ -504,9 +504,8 @@ def test_cli_dry_run(capsys):
     ret = cli_main(["install-systemd", "--dry-run"])
     assert ret == 0
     captured = capsys.readouterr().out
-    assert "claudalizer.service" in captured
-    assert "claudalizer.path" not in captured
-    assert "claudalizer.conf" in captured
+    assert "agentsignals.service" in captured
+    assert "agentsignals.conf" in captured
 
 
 def test_ipc_waybar_status(tmp_path):

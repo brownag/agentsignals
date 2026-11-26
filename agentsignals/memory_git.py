@@ -39,7 +39,7 @@ class MemoryRepo:
         self.root = Path(root).expanduser()
         self.enabled = enabled
         self._active = False
-        if (os.environ.get("AGENTSIGNALS_TESTING") or os.environ.get("CLAUDALIZER_TESTING")) and self.root.resolve() == (
+        if os.environ.get("AGENTSIGNALS_TESTING") and self.root.resolve() == (
             Path.home() / ".claude-mined-memories"
         ).resolve():
             raise RuntimeError("tests must not use the real memories root")

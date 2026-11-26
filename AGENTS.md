@@ -25,7 +25,7 @@
 * `agentsignals/memory_git.py` - git history for the memories root (`MemoryRepo`: baseline, external and pass commits)
 * `agentsignals/ipc.py` - desktop notifications (`notify-send`), Sway/Hyprland detection, Waybar signalling
 * `tests/` - pytest suite. `test_miner.py` (Claude Code), `test_source_core.py` (core loop), `test_opencode_fixture.py`, `test_opencode_source.py`, `test_opencode_schema.py`. `opencode_fixture.py` builds test databases. `conftest.py` points `OPENCODE_DB` and `XDG_DATA_HOME` at missing paths so tests never read the live database.
-* `systemd/` - unit templates (`claudalizer.service`, `claudalizer-watch.service`) and tmpfiles config. Legacy unit filenames are retained; their executable is `agent-signals`.
+* `systemd/` - unit templates (`agentsignals.service`, `agentsignals-watch.service`) and tmpfiles config. Their executable is `agent-signals`.
 * `planning/` - goals and specs (`GOALS.md`, `SPEC.md`). Read `GOALS.md` for the current goal sequence.
 * `README.md` - user-facing usage, Waybar example, test instructions
 
@@ -43,11 +43,11 @@
 * **Transcripts (durable)**: `~/.claude/projects/<slug>/<session-id>.jsonl`
 * **Memories root is a git repo**: `~/.claude-mined-memories/` has its own `.git`, created by the first pass. The path is unchanged by the rename. `--no-git` turns this off.
 * **Mined output (durable)**: `~/.claude-mined-memories/` (`DEFAULT_MEMORIES_ROOT`). Per session: `dossier.json`, `scratchpad/` copy, `memory.md` after distillation. Per project: `PROJECT_MEMORY.md`.
-* **Lock file**: `/tmp/claudalizer.lock` (`DEFAULT_LOCK_FILE`). Mining takes an exclusive `flock` with a 10 s timeout.
+* **Lock file**: `/tmp/agentsignals.lock` (`DEFAULT_LOCK_FILE`). Mining takes an exclusive `flock` with a 10 s timeout.
 * **Settle window**: 2 s (`SETTLE_DEBOUNCE_SECONDS`). Mining size cap per scratchpad file: 250 KiB (`MAX_SCRATCHPAD_FILE_BYTES`).
-* **Installed user units**: `~/.config/systemd/user/claudalizer.service`, `claudalizer-watch.service` (legacy filenames retained; no path unit)
-* **Installed tmpfiles config**: `~/.config/user-tmpfiles.d/claudalizer.conf`
-* **Entry point**: `agent-signals` console script. `claudalizer` remains a deprecated CLI alias.
+* **Installed user units**: `~/.config/systemd/user/agentsignals.service`, `agentsignals-watch.service` (no path unit)
+* **Installed tmpfiles config**: `~/.config/user-tmpfiles.d/agentsignals.conf`
+* **Entry point**: `agent-signals` console script.
 * **Dependencies**: none at runtime (stdlib only, per `pyproject.toml` and the README). Dev: pytest, pytest-cov, ruff, mypy.
 * **Python**: 3.10 or newer.
 
@@ -72,7 +72,7 @@
 
 ### Ask First
 * Running `make systemd-install` or `make systemd-uninstall` (changes the user's systemd state).
-* Running `claudalizer watch` or `make watch` against live `/tmp/claude-1000` for long periods (it notifies and distills every real session).
+* Running `agentsignals watch` or `make watch` against live `/tmp/claude-1000` for long periods (it notifies and distills every real session).
 * Changing the settle window, size cap, or lock timeout.
 
 ### Never

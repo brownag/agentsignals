@@ -61,7 +61,7 @@ def detect_compositor() -> Optional[str]:
     return None
 
 
-DEFAULT_STATUS_FILE = Path("/tmp/claudalizer_status.json")
+DEFAULT_STATUS_FILE = Path("/tmp/agentsignals_status.json")
 SCAN_STATE_FILENAME = "scan_status.json"
 
 
@@ -147,7 +147,7 @@ def emit_waybar_signal(
     status_file defaults to DEFAULT_STATUS_FILE, read at call time, so tests can redirect it.
 
     Waybar custom module can consume this via:
-      "exec": "cat /tmp/claudalizer_status.json"
+      "exec": "cat /tmp/agentsignals_status.json"
       "return-type": "json"
     """
     payload: Dict[str, Any] = {
