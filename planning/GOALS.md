@@ -1,38 +1,50 @@
 # Project Goals (`planning/GOALS.md`)
 
-Last Updated: 2026-11-24
-Source State: STATE_10.md (G23 complete). Re-ranked 2026-11-24 with Magic Wand. G16, G_dead-notify and G17 are done, and so is the live check (G_live: G4, G6-followup, G3). Only the real-data LLM run is left open. G_opencode added to the backlog 2026-11-24.
+Last Updated: 2026-11-25
+Source State: STATE_10.md (G23 complete). Re-ranked 2026-11-25 with Magic Wand: G_opencode split into sub-goals; G_oc-spec done (SPEC §3.1 *Session sources* and *opencode source*, §4.1a). The opencode goals below form the next plan-wave set. G_llm-live is unchanged and user-run.
 
-Intent: durable indexing of Claude session history from volatile `/tmp/claude-1000` before deletion, on Sway/Wayland, with systemd and Waybar included. Current focus: the installed system works live; what remains is confirming LLM distillation on real data.
+Intent: durable indexing of Claude session history from volatile `/tmp/claude-1000` before deletion, on Sway/Wayland, with systemd and Waybar included. Current focus: mining opencode sessions alongside Claude Code sessions (G_opencode).
 
 ## Circled Goal (Active)
 
-- **[G_llm-live]** `CLAUDALIZER_LLM_ENDPOINT=http://localhost:8090/v1/chat/completions claudalizer distill --force` writes memory blocks with a title and an Objective line from real data.
-  - Why now: it is the only open goal left that the code is waiting on. The code is done under G_memlab, G_memlab-open and G10.
-  - Exit criteria: after the run, the `memory.md` files under `~/.claude-mined-memories/` have LLM-written blocks, each with a title and an `Objective:` line.
-  - First action: start the local LLM endpoint, then you run the command above.
-  - Status: User-run.
+The plan-wave set is G_oc-seam, G_oc-fixture, G_oc-read, G_oc-guard and G_oc-cli. G_oc-seam and G_oc-fixture are roots and do not depend on each other, so they can run in parallel in the first wave.
+
+- **[G_oc-seam]** `miner.py` is a core that doesn't care where a session came from, plus a `claudalizer/sources/claude_code.py` adapter behind the `SessionSource` protocol (SPEC §3.1 *Session sources*), with no change in behaviour.
+  - Why now: G_oc-read and G_oc-cli need the adapter slot to exist. This is the riskiest step for existing behaviour, so it lands first, on its own.
+  - Exit criteria: every existing test in `tests/` passes without edits. `SessionDossier` gains `source`, `touched_files` and `source_meta`, each with a default. `EXIT_CODE_PATTERN` becomes `r"Exit code:? (\d+)"`. `make check` passes.
+  - First action: add `claudalizer/sources/__init__.py` with `SessionRef`, `Extraction` and `SessionSource`, then move discovery and extraction out of `SessionMiner.scan_and_mine` and `_mine_session`.
+  - Depends on: G_oc-spec (done).
+- **[G_oc-fixture]** `tests/opencode_fixture.py` builds an opencode v2.4.1-shaped database in `tmp_path`, using the tables and columns in SPEC §3.1 plus a `migration` row. It has helpers for sessions, messages (with inline content) and part rows.
+  - Why now: G_oc-read and G_oc-guard are tested against it.
+  - Exit criteria: a self-test builds a family (a root and one child) with inline and part-row tool items, then reads it back with stdlib `sqlite3`. No test touches `~/.local/share/opencode`.
+  - First action: write the `CREATE TABLE` statements from SPEC §3.1's table, with the column names checked against the live schema using `pragma table_info` (read-only).
+  - Depends on: G_oc-spec (done).
 
 ## Sequenced Goals (Dependency DAG)
 
-_(none.)_
+- **[G_oc-read]** `claudalizer/sources/opencode.py` finds families, works out whether they are settled and changed, and extracts prompts, tool errors, failed shells, failed turns and touched files, as SPEC §3.1 *opencode source* says.
+  - Exit criteria: the "Fixture and reader" tests in SPEC §4.1a pass; `make check` passes.
+  - Depends on: G_oc-seam, G_oc-fixture.
+- **[G_oc-guard]** The schema guard and error handling work: missing columns skip the source with a warning, an unknown migration warns once and keeps reading, a missing database is silent, and a corrupt database doesn't stop the scan. The database is opened read-only.
+  - Exit criteria: the "Guard" tests in SPEC §4.1a pass.
+  - Depends on: G_oc-fixture, G_oc-read (the guard wraps the reader's open).
+- **[G_oc-cli]** `--source` and `--opencode-db` work on `scan`, `watch` and the systemd watch unit (both sources on by default). `watch` skips the opencode queries when the database and `-wal` mtimes are unchanged. README, AGENTS.md and SPEC §3.4 match.
+  - Exit criteria: the "CLI and integration" tests in SPEC §4.1a pass; `make check` passes; `make systemd-dry-run` output is reviewed (installing is ask-first).
+  - Depends on: G_oc-read, G_oc-guard.
+- **[G_oc-live]** One `claudalizer scan --no-debounce` against the real `opencode.db` writes opencode dossiers. Then `claudalizer distill` puts opencode sessions and Claude Code sessions into one `PROJECT_MEMORY.md` for a shared repo (for example `-home-andrew-AI-claudalizer`).
+  - Exit criteria: the database's mtime is unchanged after the scan; at least one `PROJECT_MEMORY.md` has sections from both sources.
+  - Depends on: G_oc-cli. Running `watch` long-term on live data is ask-first.
 
 ## Independent Backlog
 
-- **[G_opencode]** `claudalizer scan` and `watch` mine finished opencode sessions into dossiers and memory, alongside Claude Code sessions.
-  - Why: opencode sessions hold the same kind of history (prompts, tool errors, touched files), but claudalizer only reads Claude Code. Research: `planning/research/OPENCODE_SESSIONS.md` (opencode v2.4.1, commit `6f05140`).
-  - Source: the SQLite database `~/.local/share/opencode/opencode.db` (`OPENCODE_DB` overrides it), tables `session_v2`, `session_message`, `session_part`. Read-only via stdlib `sqlite3`. `/tmp/opencode` holds worktrees, not session data, and is not mined.
-  - Exit criteria:
-    - An opencode source module sits beside the Claude Code one in the miner; the distiller is unchanged.
-    - A session is mined only when idle (`time_idle >= time_busy`) and changed since its dossier, judged by message and part `time_updated`, not only `session_v2.time_updated`.
-    - Dossiers record user prompts, tool errors (`state.status="error"`), failed shell commands (non-zero `state.metadata.exit`; text `Exit code: N`), and touched files from `data.snapshot.files`. Assistant text is read from both inline message data and `session_part` rows.
-    - The project slug comes from `session_v2.directory`, so opencode and Claude Code sessions in one repo share a `PROJECT_MEMORY.md`.
-    - Every session is mined, subagents included: each subagent session's prompts, errors and touched files are folded into its parent's dossier (decided 2026-11-24: mine all of it).
-    - An unknown schema migration skips the opencode source with a warning; the watch loop does not crash.
-    - Tests use a fixture database built in `tmp_path`; `make check` passes.
-  - Risks: the v2 schema changed about 90 times in 2026; the HTTP API and export are experimental, so they are not used.
-  - First action: write SPEC sections for the opencode source, including how a subagent session is linked to its parent.
-  - Depends on: none.
+_(none.)_
+
+## Blocked / External Watch
+
+- **[G_llm-live]** `CLAUDALIZER_LLM_ENDPOINT=http://localhost:8090/v1/chat/completions claudalizer distill --force` writes memory blocks with a title and an Objective line from real data.
+  - Status: User-run. The code is done (G_memlab, G_memlab-open, G10).
+  - Exit criteria: the `memory.md` files under `~/.claude-mined-memories/` have LLM-written blocks, each with a title and an `Objective:` line.
+  - First action: you start the local LLM endpoint, then run the command above. Running it after G_oc-live also covers opencode dossiers.
 
 ## Deferred
 
@@ -44,7 +56,16 @@ _(none.)_
   - Observed 2026-11-24: the 2 s settle window is shorter than the 3 s watch interval, so an active session (a background task writing output) is re-mined about every 3 s, never shows as Active, and pushes up Waybar's total-mined count. Harmless; changing the settle window is ask-first.
   - Trigger: the total-mined count or the CPU and I/O from re-mining become a problem.
 
+- **[G_sanitize]** Distillation of opencode sessions uses `opencode session export --sanitize` output instead of raw rows.
+  - Trigger: concern about what opencode content reaches the LLM. How its redaction works has not been read (research, Open questions).
+- **[G_oc-worktree]** Sessions in opencode-managed worktrees (`~/.local/share/opencode/worktree/...`) are filed under their project's main checkout slug.
+  - Trigger: worktree slugs fragment project memory. Today they get their own slug, as Claude Code worktrees do (SPEC §3.1).
+
 ## Done
+
+- **[G_oc-spec]** SPEC states the opencode source: the protocol, the settle and change marker, the field mapping, the subagent fold, the schema guard, and the tests.
+  - Status: Done (2026-11-25). SPEC §3.1 *Session sources* and *opencode source*, §3.4 global flags, §4.1a test list. The rules were checked read-only against the live database: one level of subagent nesting and no orphans; the marker query took about 20 ms warm; edits go through the `patch` tool (`patchText`); `snapshot.files` holds relative paths.
+- **[G_opencode]** (parent) Split into G_oc-spec, G_oc-seam, G_oc-fixture, G_oc-read, G_oc-guard, G_oc-cli and G_oc-live on 2026-11-25. Its original exit criteria are now in SPEC §3.1 and §4.1a.
 
 - **[G_live]** After `make systemd-install`, the installed units and Waybar module work on this machine.
   - Status: Done (2026-11-24). Units installed at 17:31 and Waybar restarted.

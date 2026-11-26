@@ -191,7 +191,9 @@ For a dossier, the closest "files the session produced" signal is the union of `
 
 ## Open questions
 
-- `/tmp` is a 55G tmpfs at 100% use. That blocks clones here, and it likely also affects Claude Code scratchpads and claudalizer's lock file (`/tmp/claudalizer.lock`). It is worth checking before any new work.
+The design decisions are recorded in `planning/SPEC.md` §3.1 (*Session sources*, *opencode source*) and §4.1a.
+
+- ~~`/tmp` is a 55G tmpfs at 100% use.~~ Resolved 2026-11-25: `/tmp` is at 1% use; the full disk was transient.
 - Does `GET /api/session/{id}/message` return exactly the stored `data` shapes, or a projection? (**UNVERIFIED**; see section 5.)
 - Can a `tool-output/tool_*` file be traced to its session, by a path recorded in tool metadata (`outputPath`)? Not traced.
 - How does `opencode session export --sanitize` redact data? It could be a safer input for LLM distillation. Not read.
