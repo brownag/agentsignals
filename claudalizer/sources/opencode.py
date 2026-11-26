@@ -1,20 +1,30 @@
 """Extraction functions for opencode sessions (pure functions over a sqlite3 connection)."""
 
 import json
+import logging
 import os
 import re
 import sqlite3
+import time
 from datetime import datetime, timezone
-from typing import Any, Optional
+from pathlib import Path
+from typing import Any, Iterator, Optional
 
 from claudalizer.miner import (
     EXIT_CODE_PATTERN,
     MIN_PROMPT_LENGTH,
+    SETTLE_DEBOUNCE_SECONDS,
     ToolErrorEvent,
     has_nonzero_exit_code,
     is_git_discernable,
 )
+from claudalizer.sources import Extraction, SessionRef
+from claudalizer.sources.opencode_schema import open_readonly
 
+log = logging.getLogger(__name__)
+
+OPENCODE_QUIET_SECONDS = 600
+MAX_FAMILY_DEPTH = 64
 MAX_TOUCHED_FILES = 500
 _PATCH_FILE_RE = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", re.MULTILINE)
 
@@ -228,3 +238,98 @@ def extract_session(
         elif m["type"] == "idle":
             errors.extend(failed_turn_events([m]))
     return prompts, errors, touched_files(messages, contents, directory)
+
+
+_MARKER_SQL = """
+SELECT s.id, s.parent_id, s.directory, s.time_created, s.time_busy, s.time_idle,
+       max(coalesce(s.time_updated,0), coalesce(s.time_idle,0),
+           coalesce((SELECT max(time_updated) FROM session_message WHERE session_id=s.id),0),
+           coalesce((SELECT max(time_updated) FROM session_part WHERE session_id=s.id),0))
+FROM session_v2 s
+"""
+
+
+def _now() -> float:
+    return time.time()
+
+
+def _find_root(rows: dict[str, tuple], sid: str) -> str:
+    seen = {sid}
+    cur = sid
+    for _ in range(MAX_FAMILY_DEPTH):
+        parent = rows[cur][1]
+        if parent is None or parent not in rows:
+            return cur
+        if parent in seen:
+            log.warning("opencode session parent loop at %s", cur)
+            return cur
+        seen.add(parent)
+        cur = parent
+    log.warning("opencode session nesting deeper than %d at %s", MAX_FAMILY_DEPTH, cur)
+    return cur
+
+
+class OpencodeSource:
+    name = "opencode"
+
+    def __init__(self, db_path: Path, skip_if_unchanged: bool = False) -> None:
+        self.db_path = Path(db_path)
+        self.skip_if_unchanged = skip_if_unchanged
+        # root id -> [{"id", "directory", "time_created"}, ...], root first
+        self._families: dict[str, list[dict]] = {}
+
+    def iter_sessions(self, target_slug: Optional[str]) -> Iterator[SessionRef]:
+        self._families = {}
+        opened = open_readonly(self.db_path)
+        if opened is None:
+            return
+        conn, _ = opened
+        try:
+            rows = {r[0]: r for r in conn.execute(_MARKER_SQL).fetchall()}
+        finally:
+            conn.close()
+        groups: dict[str, list[tuple]] = {}
+        for sid in rows:
+            groups.setdefault(_find_root(rows, sid), []).append(rows[sid])
+        now = _now()
+        for root_id, members in groups.items():
+            root = rows[root_id]
+            slug = slug_for_directory(root[2] or "")
+            if target_slug and slug != target_slug:
+                continue
+            changed_at = max(m[6] for m in members) / 1000
+            age = now - changed_at
+            idle_all = all(
+                m[5] is not None and m[5] >= (m[4] or 0) for m in members
+            )
+            settled = (idle_all and age >= SETTLE_DEBOUNCE_SECONDS) or age >= OPENCODE_QUIET_SECONDS
+            ordered = [root] + [m for m in members if m[0] != root_id]
+            self._families[root_id] = [
+                {"id": m[0], "directory": m[2], "time_created": m[3]} for m in ordered
+            ]
+            yield SessionRef(
+                source=self.name,
+                slug=slug,
+                session_id=root_id,
+                decoded_path=root[2],
+                changed_at=changed_at,
+                settled=settled,
+            )
+
+    def extract(self, ref: SessionRef) -> Extraction:
+        opened = open_readonly(self.db_path)
+        if opened is None:
+            return Extraction([], [], None, [], False, {})
+        conn, _ = opened
+        try:
+            prompts, errors, files = extract_session(conn, ref.session_id, ref.decoded_path or "")
+        finally:
+            conn.close()
+        return Extraction(
+            user_prompts=prompts,
+            tool_errors=errors,
+            scratchpad_dir=None,
+            touched_files=files,
+            transcript_found=True,
+            source_meta={},
+        )

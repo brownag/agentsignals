@@ -1,6 +1,9 @@
+import os
 import sqlite3
+import time
 
 from claudalizer.sources import opencode as oc
+from claudalizer.miner import SessionMiner
 from tests.opencode_fixture import OpencodeDB, assistant_data, tool_item
 
 S = "s1"
@@ -136,3 +139,112 @@ def test_bad_json_rows_skipped(tmp_path):
         db.conn.commit()
         assert oc.load_messages(db.conn, S) == []
         assert isinstance(db.conn, sqlite3.Connection)
+
+
+# ---- OpencodeSource discovery and settle ----
+
+NOW_MS = int(time.time() * 1000)
+
+
+def _fam_db(tmp_path):
+    db = OpencodeDB(tmp_path / "fam.db")
+    return db
+
+
+def _sess(db, sid, directory="/work/proj", parent=None, age_s=0, idle=True, busy=1000, **kw):
+    t = NOW_MS - int(age_s * 1000)
+    db.add_session(sid, directory, parent_id=parent, time_busy=t - 1 if idle else t,
+                   time_idle=t if idle else None, time_created=t, time_updated=t, **kw)
+    return t
+
+
+def _prompt(db, sid, t):
+    db.add_message(sid, "user", {"text": LONG}, time_updated=t)
+
+
+def _miner(tmp_path, db_path):
+    return SessionMiner(
+        tmp_root=tmp_path / "none", claude_projects=tmp_path / "cp",
+        memories_root=tmp_path / "mem", lock_file=tmp_path / "lock",
+        sources=[oc.OpencodeSource(db_path)],
+    )
+
+
+def _dossier(tmp_path, slug="-work-proj", sid="a"):
+    return tmp_path / "mem" / slug / sid / "dossier.json"
+
+
+def test_busy_session_not_mined(tmp_path):
+    with _fam_db(tmp_path) as db:
+        t = _sess(db, "a", age_s=5, idle=False)
+        _prompt(db, "a", t)
+    m = _miner(tmp_path, db.path)
+    assert m.scan_and_mine(debounce=True) == []
+    assert m.skipped["active"] == ["-work-proj/a"]
+
+
+def test_unmarked_session_mined_after_quiet_window(tmp_path):
+    with _fam_db(tmp_path) as db:
+        t = _sess(db, "a", age_s=oc.OPENCODE_QUIET_SECONDS + 60, idle=False)
+        _prompt(db, "a", t)
+    m = _miner(tmp_path, db.path)
+    assert len(m.scan_and_mine(debounce=True)) == 1
+    assert _dossier(tmp_path).exists()
+
+
+def test_unchanged_session_is_up_to_date(tmp_path):
+    with _fam_db(tmp_path) as db:
+        t = _sess(db, "a", age_s=100)
+        _prompt(db, "a", t)
+    m = _miner(tmp_path, db.path)
+    assert len(m.scan_and_mine()) == 1
+    assert m.scan_and_mine() == []
+    assert m.skipped["up_to_date"] == 1
+
+
+def test_part_update_triggers_remine(tmp_path):
+    with _fam_db(tmp_path) as db:
+        t = _sess(db, "a", age_s=100)
+        mid = db.add_message("a", "assistant", assistant_data([]), time_updated=t)
+        db.add_part(mid, "a", 0, "text", {"text": "x"}, time_updated=t)
+        _prompt(db, "a", t)
+    m = _miner(tmp_path, db.path)
+    assert len(m.scan_and_mine()) == 1
+    old = time.time() - 50
+    os.utime(_dossier(tmp_path), (old, old))
+    conn = sqlite3.connect(str(db.path))
+    conn.execute("UPDATE session_part SET time_updated=?", (int((old + 20) * 1000),))
+    conn.commit()
+    conn.close()
+    assert len(m.scan_and_mine()) == 1
+
+
+def test_busy_subagent_holds_root(tmp_path):
+    with _fam_db(tmp_path) as db:
+        t = _sess(db, "a", age_s=100)
+        _sess(db, "c", parent="a", age_s=100, idle=False)
+        _prompt(db, "a", t)
+    m = _miner(tmp_path, db.path)
+    assert m.scan_and_mine(debounce=True) == []
+    assert m.skipped["active"] == ["-work-proj/a"]
+
+
+def test_orphan_subagent_becomes_root(tmp_path):
+    with _fam_db(tmp_path) as db:
+        t = _sess(db, "o", parent="missing", age_s=100)
+        _prompt(db, "o", t)
+    src = oc.OpencodeSource(db.path)
+    refs = list(src.iter_sessions(None))
+    assert [r.session_id for r in refs] == ["o"]
+    assert src._families["o"][0]["id"] == "o"
+
+
+def test_target_slug_filters_families(tmp_path):
+    with _fam_db(tmp_path) as db:
+        _sess(db, "a", "/work/one", age_s=100)
+        _sess(db, "b", "/work/two", age_s=100)
+        _sess(db, "c", "/work/two", parent="b", age_s=100)
+    src = oc.OpencodeSource(db.path)
+    refs = list(src.iter_sessions("-work-two"))
+    assert [r.session_id for r in refs] == ["b"]
+    assert [f["id"] for f in src._families["b"]] == ["b", "c"]
