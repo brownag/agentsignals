@@ -250,6 +250,7 @@ class MemoryDistiller:
         was_forced = memory_md.exists()
         with self._write_lock():
             if self.repo is not None and not self._external_done:
+                self.repo.ensure()
                 self.repo.commit_external("distill")
                 self._external_done = True
 

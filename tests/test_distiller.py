@@ -427,6 +427,9 @@ class FakeRepo:
         self.externals = []
         self.passes = []
 
+    def ensure(self):
+        return True
+
     def commit_external(self, before):
         self.externals.append(before)
         return "ext1234"
