@@ -5,8 +5,8 @@ import subprocess
 
 import pytest
 
-from claudalizer import memory_git
-from claudalizer.memory_git import GIT_IGNORE_LINES, MemoryRepo
+from agentsignals import memory_git
+from agentsignals.memory_git import GIT_IGNORE_LINES, MemoryRepo
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
 
@@ -151,12 +151,12 @@ def test_commits_use_bot_identity(tmp_path, monkeypatch):
     (root / "a.json").write_text("{}", encoding="utf-8")
     repo.commit_pass("scan: 1", ["x"])
     assert _git(root, "log", "--format=%an <%ae>").splitlines() == [
-        "claudalizer <claudalizer@localhost>",
-        "claudalizer <claudalizer@localhost>",
+        "AgentSignals <agentsignals@localhost>",
+        "AgentSignals <agentsignals@localhost>",
     ]
 
 
 def test_real_memories_root_refused_under_tests(monkeypatch):
-    monkeypatch.setenv("CLAUDALIZER_TESTING", "1")
+    monkeypatch.setenv("AGENTSIGNALS_TESTING", "1")
     with pytest.raises(RuntimeError):
         MemoryRepo(memory_git.Path.home() / ".claude-mined-memories")

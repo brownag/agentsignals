@@ -1,4 +1,4 @@
-"""Command-line interface for claudalizer."""
+"""Command-line interface for agentsignals."""
 
 import argparse
 import logging
@@ -9,14 +9,14 @@ import time
 from pathlib import Path
 from typing import Optional, Tuple
 
-from claudalizer.distiller import MemoryDistiller
-from claudalizer.memory_git import MemoryRepo
-from claudalizer.ipc import dispatch_wm_hook, emit_waybar_signal, record_scan, send_notification
-from claudalizer.sources.claude_code import ClaudeCodeSource
-from claudalizer.sources.opencode import OpencodeSource
-from claudalizer.sources.opencode_schema import resolve_db_path
-from claudalizer.waybar_config import find_waybar_config, manual_snippet, patch_waybar_config
-from claudalizer.miner import (
+from agentsignals.distiller import MemoryDistiller
+from agentsignals.memory_git import MemoryRepo
+from agentsignals.ipc import dispatch_wm_hook, emit_waybar_signal, record_scan, send_notification
+from agentsignals.sources.claude_code import ClaudeCodeSource
+from agentsignals.sources.opencode import OpencodeSource
+from agentsignals.sources.opencode_schema import resolve_db_path
+from agentsignals.waybar_config import find_waybar_config, manual_snippet, patch_waybar_config
+from agentsignals.miner import (
     DEFAULT_CLAUDE_PROJECTS,
     DEFAULT_LOCK_FILE,
     DEFAULT_MEMORIES_ROOT,
@@ -25,7 +25,7 @@ from claudalizer.miner import (
     SessionMiner,
 )
 
-logger = logging.getLogger("claudalizer")
+logger = logging.getLogger("agentsignals")
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -61,15 +61,22 @@ def _non_negative_int(value: str) -> int:
 
 
 def resolve_llm_settings(args: argparse.Namespace) -> Tuple[Optional[str], str]:
-    """Endpoint and model for distillation. The flag wins; otherwise the environment (read at call time).
+    """Resolve settings, preferring new names over deprecated aliases.
 
-    --llm-model defaults to "llama3". That default counts as not given, so CLAUDALIZER_LLM_MODEL
-    (default "local") applies.
+    --llm-model defaults to "llama3". That default counts as not given.
     """
-    endpoint = getattr(args, "llm_endpoint", None) or os.environ.get("CLAUDALIZER_LLM_ENDPOINT") or None
+    endpoint = (
+        getattr(args, "llm_endpoint", None)
+        or os.environ.get("AGENTSIGNALS_LLM_ENDPOINT")
+        or os.environ.get("CLAUDALIZER_LLM_ENDPOINT")
+        or None
+    )
     model = getattr(args, "llm_model", None) or "llama3"
     if model == "llama3":
-        model = os.environ.get("CLAUDALIZER_LLM_MODEL", "local")
+        model = (
+            os.environ.get("AGENTSIGNALS_LLM_MODEL")
+            or os.environ.get("CLAUDALIZER_LLM_MODEL", "local")
+        )
     return endpoint, model
 
 
@@ -140,7 +147,7 @@ def handle_scan(args: argparse.Namespace) -> int:
     print(format_skip_summary(miner.skipped))
 
     if args.auto_distill and dossiers and not resolve_llm_settings(args)[0]:
-        logger.warning("No LLM endpoint set (--llm-endpoint or CLAUDALIZER_LLM_ENDPOINT); memories are not distilled.")
+        logger.warning("No LLM endpoint set (--llm-endpoint, AGENTSIGNALS_LLM_ENDPOINT, or deprecated CLAUDALIZER_LLM_ENDPOINT); memories are not distilled.")
     elif args.auto_distill and dossiers:
         logger.info("Running automatic distillation on mined sessions...")
         distiller = MemoryDistiller(memories_root=Path(args.memories_root), repo=build_repo(args),
@@ -160,7 +167,7 @@ def handle_scan(args: argparse.Namespace) -> int:
 
 def handle_distill(args: argparse.Namespace) -> int:
     if not resolve_llm_settings(args)[0]:
-        logger.error("No LLM endpoint set (--llm-endpoint or CLAUDALIZER_LLM_ENDPOINT); memories are not distilled.")
+        logger.error("No LLM endpoint set (--llm-endpoint, AGENTSIGNALS_LLM_ENDPOINT, or deprecated CLAUDALIZER_LLM_ENDPOINT); memories are not distilled.")
         return 2
     distiller = MemoryDistiller(memories_root=Path(args.memories_root), repo=build_repo(args),
                                 lock_file=Path(args.lock_file))
@@ -182,7 +189,7 @@ def handle_distill(args: argparse.Namespace) -> int:
 
 def handle_watch(args: argparse.Namespace) -> int:
     setup_logging(args.verbose)
-    logger.info(f"Starting claudalizer watch loop on {args.tmp_root} (poll interval: {args.interval}s)...")
+    logger.info(f"Starting agentsignals watch loop on {args.tmp_root} (poll interval: {args.interval}s)...")
     dispatch_wm_hook("watching", {"message": "Watching for sessions"})
 
     miner = SessionMiner(
@@ -200,7 +207,7 @@ def handle_watch(args: argparse.Namespace) -> int:
         if args.auto_distill else None
     )
     if distiller and not resolve_llm_settings(args)[0]:
-        logger.warning("No LLM endpoint set (--llm-endpoint or CLAUDALIZER_LLM_ENDPOINT); memories are not distilled.")
+        logger.warning("No LLM endpoint set (--llm-endpoint, AGENTSIGNALS_LLM_ENDPOINT, or deprecated CLAUDALIZER_LLM_ENDPOINT); memories are not distilled.")
         distiller = None
 
     latest_state = None
@@ -237,10 +244,9 @@ def handle_watch(args: argparse.Namespace) -> int:
 
 def handle_install_systemd(args: argparse.Namespace) -> int:
     # Resolve executable path
-    which_bin = shutil.which("claudalizer")
+    which_bin = shutil.which("agent-signals")
     if not which_bin:
-        # Fallback to sys.executable -m claudalizer.cli or user local bin
-        which_bin = str(Path.home() / ".local" / "bin" / "claudalizer")
+        which_bin = str(Path.home() / ".local" / "bin" / "agent-signals")
 
     systemd_src_dir = Path(__file__).resolve().parent.parent / "systemd"
     service_src = systemd_src_dir / "claudalizer.service"
@@ -254,9 +260,11 @@ def handle_install_systemd(args: argparse.Namespace) -> int:
     # Prepare rendered unit contents
     service_content = service_src.read_text(encoding="utf-8")
     # Replace executable if needed
+    service_content = service_content.replace("%h/.local/bin/agent-signals", which_bin)
     service_content = service_content.replace("%h/.local/bin/claudalizer", which_bin)
 
-    watch_content = watch_src.read_text(encoding="utf-8").replace("%h/.local/bin/claudalizer", which_bin)
+    watch_content = watch_src.read_text(encoding="utf-8").replace("%h/.local/bin/agent-signals", which_bin)
+    watch_content = watch_content.replace("%h/.local/bin/claudalizer", which_bin)
     tmpfiles_content = tmpfiles_src.read_text(encoding="utf-8")
 
     if args.dry_run:
@@ -297,10 +305,10 @@ def handle_install_systemd(args: argparse.Namespace) -> int:
     waybar_state = patch_waybar_config(waybar_path)
     print(f"\nWaybar config: {waybar_path or '(not found)'}")
     if waybar_state == "added":
-        print("  Added custom/claudalizer to modules-right (backup saved next to the config).")
+        print("  Added custom/agent-signals to modules-right (backup saved next to the config).")
         print("  Restart Waybar to load it.")
     elif waybar_state == "present":
-        print("  custom/claudalizer already present; left unchanged.")
+        print("  custom/agent-signals already present; left unchanged.")
     else:
         print(f"  Not edited ({waybar_state}). Add it by hand:")
         print("  " + manual_snippet().replace("\n", "\n  "))
@@ -310,7 +318,7 @@ def handle_install_systemd(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="claudalizer",
+        prog="agent-signals",
         description="Monitor ephemeral Claude Code and opencode sessions and distill behavioral memories.",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging")
@@ -374,6 +382,22 @@ def main(argv: Optional[list] = None) -> int:
         return handle_install_systemd(args)
 
     return 0
+
+
+def legacy_main(argv: Optional[list] = None) -> int:
+    """Deprecated `claudalizer` entry point."""
+    if argv is None:
+        argv = sys.argv[1:]
+    parser = build_parser()
+    parser.prog = "claudalizer (deprecated; use agent-signals)"
+    args = parser.parse_args(argv)
+    setup_logging(args.verbose)
+    return {
+        "scan": handle_scan,
+        "distill": handle_distill,
+        "watch": handle_watch,
+        "install-systemd": handle_install_systemd,
+    }[args.command](args)
 
 
 if __name__ == "__main__":

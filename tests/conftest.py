@@ -1,6 +1,6 @@
 import pytest
 
-import claudalizer.ipc as ipc
+import agentsignals.ipc as ipc
 
 
 @pytest.fixture(autouse=True)
@@ -24,7 +24,7 @@ def fake_llm(monkeypatch):
     Distillation has no offline fallback, so any test that expects a memory.md needs this
     fixture and an llm_endpoint. Returns the list of prompts the fake received.
     """
-    import claudalizer.distiller as distiller
+    import agentsignals.distiller as distiller
 
     prompts = []
 
@@ -44,4 +44,4 @@ def fake_llm(monkeypatch):
 @pytest.fixture(autouse=True)
 def _tests_never_touch_real_memories(monkeypatch):
     """Let memory_git refuse the real memories root while tests run."""
-    monkeypatch.setenv("CLAUDALIZER_TESTING", "1")
+    monkeypatch.setenv("AGENTSIGNALS_TESTING", "1")

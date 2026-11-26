@@ -1,7 +1,7 @@
 import os
 
-from claudalizer.miner import SessionDossier, has_nonzero_exit_code
-from claudalizer.sources.claude_code import ClaudeCodeSource
+from agentsignals.miner import SessionDossier, has_nonzero_exit_code
+from agentsignals.sources.claude_code import ClaudeCodeSource
 
 OLD = 1_000_000_000.0
 
@@ -72,19 +72,19 @@ class _FakeSource:
         yield from self.refs
 
     def extract(self, ref):
-        from claudalizer.sources import Extraction
+        from agentsignals.sources import Extraction
 
         return Extraction(["hello"], [], None, ["f.py"], True, {"k": 1})
 
 
 def _ref(source="fake", settled=True):
-    from claudalizer.sources import SessionRef
+    from agentsignals.sources import SessionRef
 
     return SessionRef(source, "-slug", "sid", "/x", 1.0, settled)
 
 
 def _miner(tmp_path, sources):
-    from claudalizer.miner import SessionMiner
+    from agentsignals.miner import SessionMiner
 
     return SessionMiner(
         tmp_root=tmp_path / "nope",

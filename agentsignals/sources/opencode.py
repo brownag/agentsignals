@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
-from claudalizer.miner import (
+from agentsignals.miner import (
     EXIT_CODE_PATTERN,
     MIN_PROMPT_LENGTH,
     SETTLE_DEBOUNCE_SECONDS,
@@ -18,8 +18,8 @@ from claudalizer.miner import (
     has_nonzero_exit_code,
     is_git_discernable,
 )
-from claudalizer.sources import Extraction, SessionRef
-from claudalizer.sources.opencode_schema import open_readonly
+from agentsignals.sources import Extraction, SessionRef
+from agentsignals.sources.opencode_schema import open_readonly
 
 log = logging.getLogger(__name__)
 

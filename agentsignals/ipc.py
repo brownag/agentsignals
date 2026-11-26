@@ -1,4 +1,4 @@
-"""Desktop notification and Wayland compositor IPC hooks for claudalizer."""
+"""Desktop notification and Wayland compositor IPC hooks for agentsignals."""
 
 import json
 import os
@@ -16,7 +16,7 @@ def send_notification(
     title: str,
     body: str,
     urgency: str = "normal",
-    app_name: str = "claudalizer",
+    app_name: str = "AgentSignals",
     icon: Optional[str] = None,
 ) -> bool:
     """Send a desktop notification via notify-send if available."""
@@ -153,7 +153,7 @@ def emit_waybar_signal(
     payload: Dict[str, Any] = {
         "text": f"🧠 {mined_count}" if mined_count > 0 else "🧠",
         "alt": status,
-        "tooltip": f"Claudalizer: {status}\n{message}" if message else f"Claudalizer: {status}",
+        "tooltip": f"AgentSignals: {status}\n{message}" if message else f"AgentSignals: {status}",
         "class": status,
         "count": mined_count,
     }
@@ -223,10 +223,10 @@ def dispatch_wm_hook(
         cmd = ["swaymsg"]
         # Mode or bar signal or user message
         # swaymsg doesn't have an arbitrary broadcast command, but we can send a custom command or nop
-        # We can run swaymsg -q -- nop "claudalizer: <event>"
+        # We can run swaymsg -q -- nop "agentsignals: <event>"
         try:
             subprocess.run(
-                [cmd[0], "-q", "--", f"nop claudalizer {event}"],
+                [cmd[0], "-q", "--", f"nop AgentSignals {event}"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=3,

@@ -207,7 +207,7 @@ class MemoryDistiller:
     def _write_lock(self):
         if self.lock_file is None:
             return nullcontext()
-        from claudalizer.miner import file_lock
+        from agentsignals.miner import file_lock
 
         return file_lock(self.lock_file)
 

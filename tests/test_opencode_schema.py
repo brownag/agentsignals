@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from claudalizer.sources import opencode_schema as s
+from agentsignals.sources import opencode_schema as s
 from tests.opencode_fixture import OpencodeDB
 
 

@@ -7,8 +7,8 @@ import json
 import os
 import time
 
-from claudalizer.cli import format_skip_summary
-from claudalizer.miner import SessionMiner
+from agentsignals.cli import format_skip_summary
+from agentsignals.miner import SessionMiner
 
 
 def _age(path, seconds):

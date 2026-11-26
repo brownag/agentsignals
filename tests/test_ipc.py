@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-import claudalizer.ipc as ipc
+import agentsignals.ipc as ipc
 
 
 @pytest.fixture
@@ -29,7 +29,7 @@ def test_sway_dispatch_when_swaysock_present(clean_env, monkeypatch):
     monkeypatch.setattr(ipc.subprocess, "run", lambda cmd, **kwargs: calls.append(cmd))
 
     assert ipc.dispatch_wm_hook("idle", {"message": "done"}) is True
-    assert calls == [["swaymsg", "-q", "--", "nop claudalizer idle"]]
+    assert calls == [["swaymsg", "-q", "--", "nop AgentSignals idle"]]
 
 
 def test_hyprland_dispatch(clean_env, monkeypatch):

@@ -1,10 +1,10 @@
 [Unit]
-Description=Claudalizer Session Miner and Behavioral Memory Distiller
-Documentation=https://github.com/example/claudalizer
+Description=AgentSignals Session Miner and Behavioral Memory Distiller
+Documentation=https://github.com/example/agent-signals
 
 [Service]
 Type=oneshot
-ExecStart=%h/.local/bin/claudalizer scan --notify
+ExecStart=%h/.local/bin/agent-signals scan --notify
 StandardOutput=journal
 StandardError=journal
 Nice=19
