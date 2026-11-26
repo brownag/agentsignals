@@ -111,3 +111,40 @@ def manual_snippet() -> str:
         f'Add "{MODULE_NAME}" to "modules-right", and this block at the top level:\n'
         + MODULE_BLOCK
     )
+
+
+STYLE_RULE = '''
+#custom-agentsignals {
+    padding-left: 10px;
+    padding-right: 10px;
+    margin: 4px 3px;
+    background: @theme_selected_bg_color;
+    color: @theme_selected_fg_color;
+}
+'''
+
+
+def find_waybar_style(home: Optional[Path] = None) -> Optional[Path]:
+    """Return the Waybar stylesheet under the home directory, or None."""
+    base = home or Path.home()
+    path = base / ".config" / "waybar" / "style.css"
+    return path if path.is_file() else None
+
+
+def patch_waybar_style(style_path: Optional[Path], dry_run: bool = False) -> str:
+    """Append the agentsignals rule to the Waybar stylesheet.
+
+    Returns "missing", "present", "added" or "would-add". The file is backed up first.
+    """
+    if style_path is None or not style_path.is_file():
+        return "missing"
+    text = style_path.read_text(encoding="utf-8")
+    if "#custom-agentsignals" in text:
+        return "present"
+    if dry_run:
+        return "would-add"
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    backup = style_path.with_name(style_path.name + f".agentsignals-bak-{stamp}")
+    shutil.copy2(style_path, backup)
+    style_path.write_text(text.rstrip() + "\n" + STYLE_RULE, encoding="utf-8")
+    return "added"

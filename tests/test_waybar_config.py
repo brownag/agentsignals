@@ -134,3 +134,27 @@ def test_manual_snippet_mentions_module():
     snippet = manual_snippet()
     assert MODULE_NAME in snippet
     assert '"signal": 8' in snippet
+
+
+def test_style_rule_is_appended_once(tmp_path):
+    from agentsignals.waybar_config import patch_waybar_style
+
+    style = tmp_path / "style.css"
+    style.write_text("#clock {\n    color: red;\n}\n", encoding="utf-8")
+
+    assert patch_waybar_style(style) == "added"
+    text = style.read_text(encoding="utf-8")
+    assert "#custom-agentsignals {" in text
+    assert text.startswith("#clock {")
+    assert patch_waybar_style(style) == "present"
+    assert style.read_text(encoding="utf-8").count("#custom-agentsignals {") == 1
+
+
+def test_style_dry_run_and_missing(tmp_path):
+    from agentsignals.waybar_config import patch_waybar_style
+
+    style = tmp_path / "style.css"
+    style.write_text("#clock {}\n", encoding="utf-8")
+    assert patch_waybar_style(style, dry_run=True) == "would-add"
+    assert "agentsignals" not in style.read_text(encoding="utf-8")
+    assert patch_waybar_style(tmp_path / "nope.css") == "missing"

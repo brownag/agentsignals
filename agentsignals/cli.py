@@ -15,7 +15,13 @@ from agentsignals.ipc import dispatch_wm_hook, emit_waybar_signal, record_scan, 
 from agentsignals.sources.claude_code import ClaudeCodeSource
 from agentsignals.sources.opencode import OpencodeSource
 from agentsignals.sources.opencode_schema import resolve_db_path
-from agentsignals.waybar_config import find_waybar_config, manual_snippet, patch_waybar_config
+from agentsignals.waybar_config import (
+    find_waybar_config,
+    find_waybar_style,
+    manual_snippet,
+    patch_waybar_config,
+    patch_waybar_style,
+)
 from agentsignals.miner import (
     DEFAULT_CLAUDE_PROJECTS,
     DEFAULT_LOCK_FILE,
@@ -308,6 +314,13 @@ def handle_install_systemd(args: argparse.Namespace) -> int:
     else:
         print(f"  Not edited ({waybar_state}). Add it by hand:")
         print("  " + manual_snippet().replace("\n", "\n  "))
+
+    style_path = find_waybar_style()
+    style_state = patch_waybar_style(style_path)
+    if style_state == "added":
+        print(f"\nWaybar style: added #custom-agentsignals to {style_path}")
+    elif style_state == "present":
+        print(f"\nWaybar style: #custom-agentsignals already present in {style_path}")
 
     return 0
 
