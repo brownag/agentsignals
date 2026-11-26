@@ -8,7 +8,7 @@ import re
 import shutil
 import time
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
@@ -350,11 +350,15 @@ class SessionMiner:
         claude_projects: Path = DEFAULT_CLAUDE_PROJECTS,
         memories_root: Path = DEFAULT_MEMORIES_ROOT,
         lock_file: Path = DEFAULT_LOCK_FILE,
+        sources: Optional[list] = None,
     ):
+        from claudalizer.sources.claude_code import ClaudeCodeSource
+
         self.tmp_root = Path(tmp_root)
         self.claude_projects = Path(claude_projects)
         self.memories_root = Path(memories_root)
         self.lock_file = Path(lock_file)
+        self.sources = sources if sources is not None else [ClaudeCodeSource(self.tmp_root, self.claude_projects)]
         self.skipped = self._empty_skips()
 
     @staticmethod
@@ -367,7 +371,7 @@ class SessionMiner:
         force: bool = False,
         target_slug: Optional[str] = None,
     ) -> List[SessionDossier]:
-        """Scan tmp_root and extract all found sessions.
+        """Mine all sessions from every source.
 
         self.skipped is reset on each call and records why sessions were not mined:
         "active" (still changing, debounce), "up_to_date" (dossier already current), and
@@ -376,44 +380,19 @@ class SessionMiner:
         dossiers: List[SessionDossier] = []
         self.skipped = self._empty_skips()
 
-        if not self.tmp_root.exists():
-            logger.info(f"Tmp root {self.tmp_root} does not exist.")
-            return dossiers
-
         with file_lock(self.lock_file):
-            for slug_entry in self.tmp_root.iterdir():
-                if not slug_entry.is_dir() or slug_entry.name.startswith("."):
-                    continue
-
-                slug = slug_entry.name
-                if not slug.startswith("-home-") and not slug.startswith("-"):
-                    # Not a project directory (e.g. bash-edit-diff or files)
-                    continue
-
-                if target_slug and slug != target_slug:
-                    continue
-
-                decoded = decode_slug(slug)
-
-                # Iterate session UUID folders
-                for session_dir in slug_entry.iterdir():
-                    if not session_dir.is_dir() or session_dir.name.startswith("."):
-                        continue
-
-                    session_id = session_dir.name
-
-                    # Debounce check on session directory and files
-                    scratchpad_dir = session_dir / "scratchpad"
-                    if debounce:
-                        # Check if session dir is still active
-                        if not is_file_settled(session_dir, SETTLE_DEBOUNCE_SECONDS):
-                            logger.debug(f"Session {session_id} not settled yet. Skipping.")
-                            self.skipped["active"].append(f"{slug}/{session_id}")
+            for source in self.sources:
+                try:
+                    for ref in source.iter_sessions(target_slug):
+                        if debounce and not ref.settled:
+                            logger.debug(f"Session {ref.session_id} not settled yet. Skipping.")
+                            self.skipped["active"].append(f"{ref.slug}/{ref.session_id}")
                             continue
-
-                    dossier = self._mine_session(slug, decoded, session_id, scratchpad_dir, force=force)
-                    if dossier:
-                        dossiers.append(dossier)
+                        dossier = self._mine_ref(source, ref, force)
+                        if dossier:
+                            dossiers.append(dossier)
+                except Exception as e:
+                    logger.warning("Session source %s failed: %s", source.name, e)
 
         return dossiers
 
@@ -425,33 +404,51 @@ class SessionMiner:
         scratchpad_dir: Path,
         force: bool = False,
     ) -> Optional[SessionDossier]:
-        """Extract a single session and save its dossier."""
+        """Mine one Claude Code session (wrapper over _mine_ref)."""
+        from claudalizer.sources import SessionRef
+        from claudalizer.sources.claude_code import ClaudeCodeSource
+
+        adapter = ClaudeCodeSource(self.tmp_root, self.claude_projects)
+        ref = SessionRef(
+            source=adapter.name,
+            slug=slug,
+            session_id=session_id,
+            decoded_path=decoded_path,
+            changed_at=adapter._changed_at(scratchpad_dir, adapter._transcript(slug, session_id)),
+            settled=True,
+        )
+
+        class _Shim:
+            name = adapter.name
+
+            @staticmethod
+            def extract(r):
+                return replace(adapter.extract(r), scratchpad_dir=scratchpad_dir)
+
+        return self._mine_ref(_Shim(), ref, force)
+
+    def _mine_ref(self, source: Any, ref: Any, force: bool = False) -> Optional[SessionDossier]:
+        """Extract a single session ref and save its dossier."""
+        slug, session_id = ref.slug, ref.session_id
         dossier_dir = self.memories_root / slug / session_id
         dossier_json = dossier_dir / "dossier.json"
 
-        # Cross-reference with persistent JSONL transcript
-        transcript_path = self.claude_projects / slug / f"{session_id}.jsonl"
-        transcript_found = transcript_path.exists()
-
         if dossier_json.exists() and not force:
-            # Prompts and tool errors come from the transcript, so a transcript change
-            # alone must trigger a re-mine (not only a scratchpad change).
-            changed = scratchpad_changed_since(scratchpad_dir, dossier_json) or (
-                transcript_found and transcript_path.stat().st_mtime > dossier_json.stat().st_mtime
-            )
-            if not changed:
+            if ref.changed_at <= dossier_json.stat().st_mtime:
                 logger.debug(f"Dossier {dossier_json} already up to date. Skipping.")
                 self.skipped["up_to_date"] += 1
                 return None
             logger.info(f"Session {slug}/{session_id} changed since last mine. Re-mining.")
 
-        user_prompts, tool_errors = parse_transcript_events(transcript_path)
+        ex = source.extract(ref)
+        user_prompts, tool_errors = ex.user_prompts, ex.tool_errors
 
-        # Snapshot scratchpad files
-        dest_scratchpad = dossier_dir / "scratchpad"
-        copied_files, skipped_files = snapshot_scratchpad(scratchpad_dir, dest_scratchpad)
+        if ex.scratchpad_dir is not None:
+            copied_files, skipped_files = snapshot_scratchpad(ex.scratchpad_dir, dossier_dir / "scratchpad")
+        else:
+            copied_files, skipped_files = [], []
 
-        # If nothing behavioral was found (no prompts, no errors, no scratchpad or skipped files), skip empty dossier
+        # touched_files alone does not count as content
         if not user_prompts and not tool_errors and not copied_files and not skipped_files:
             self.skipped["no_content"] += 1
             return None
@@ -459,8 +456,8 @@ class SessionMiner:
         dossier = SessionDossier(
             slug=slug,
             session_id=session_id,
-            decoded_path=decoded_path,
-            transcript_found=transcript_found,
+            decoded_path=ref.decoded_path,
+            transcript_found=ex.transcript_found,
             scan_timestamp=time.time(),
             user_prompts=user_prompts,
             tool_errors=[asdict(e) for e in tool_errors],
@@ -471,7 +468,11 @@ class SessionMiner:
                 "error_count": len(tool_errors),
                 "scratchpad_count": len(copied_files),
                 "skipped_count": len(skipped_files),
+                "touched_count": len(ex.touched_files),
             },
+            source=ref.source,
+            touched_files=ex.touched_files,
+            source_meta=ex.source_meta,
         )
 
         dossier_dir.mkdir(parents=True, exist_ok=True)

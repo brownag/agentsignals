@@ -58,3 +58,67 @@ def test_claude_code_source_matches_walk(tmp_path):
 def test_claude_code_source_missing_tmp_root_yields_nothing(tmp_path):
     src = ClaudeCodeSource(tmp_path / "nope", tmp_path / "p")
     assert list(src.iter_sessions(None)) == []
+
+
+class _FakeSource:
+    def __init__(self, name, refs=(), boom=False, settled=True):
+        self.name = name
+        self.refs = list(refs)
+        self.boom = boom
+
+    def iter_sessions(self, target_slug):
+        if self.boom:
+            raise RuntimeError("kaboom")
+        yield from self.refs
+
+    def extract(self, ref):
+        from claudalizer.sources import Extraction
+
+        return Extraction(["hello"], [], None, ["f.py"], True, {"k": 1})
+
+
+def _ref(source="fake", settled=True):
+    from claudalizer.sources import SessionRef
+
+    return SessionRef(source, "-slug", "sid", "/x", 1.0, settled)
+
+
+def _miner(tmp_path, sources):
+    from claudalizer.miner import SessionMiner
+
+    return SessionMiner(
+        tmp_root=tmp_path / "nope",
+        claude_projects=tmp_path / "proj",
+        memories_root=tmp_path / "mem",
+        lock_file=tmp_path / "lock",
+        sources=sources,
+    )
+
+
+def test_source_error_does_not_stop_other_sources(tmp_path, caplog):
+    m = _miner(tmp_path, [_FakeSource("bad", boom=True), _FakeSource("ok", [_ref()])])
+    with caplog.at_level("WARNING"):
+        out = m.scan_and_mine()
+    assert len(out) == 1
+    assert "Session source bad failed" in caplog.text
+
+
+def test_missing_tmp_root_still_runs_other_sources(tmp_path):
+    m = _miner(tmp_path, [ClaudeCodeSource(tmp_path / "nope", tmp_path / "proj"), _FakeSource("ok", [_ref()])])
+    assert len(m.scan_and_mine()) == 1
+
+
+def test_dossier_source_comes_from_ref(tmp_path):
+    m = _miner(tmp_path, [_FakeSource("fake", [_ref("opencode")])])
+    d = m.scan_and_mine()[0]
+    assert d.source == "opencode"
+    assert d.touched_files == ["f.py"]
+    assert d.source_meta == {"k": 1}
+    assert d.stats["touched_count"] == 1
+
+
+def test_unsettled_ref_counted_active(tmp_path):
+    m = _miner(tmp_path, [_FakeSource("fake", [_ref(settled=False)])])
+    assert m.scan_and_mine() == []
+    assert m.skipped["active"] == ["-slug/sid"]
+    assert len(m.scan_and_mine(debounce=False)) == 1
