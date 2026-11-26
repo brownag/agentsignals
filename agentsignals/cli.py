@@ -50,7 +50,7 @@ def _write_mined_status(args, miner, dossiers):
 
 def _notify_batch(dossiers) -> None:
     if dossiers:
-        send_notification("AgentSignals", f"Mined {len(dossiers)} session(s).")
+        send_notification("agentsignals", f"Mined {len(dossiers)} session(s).")
 
 
 def _non_negative_int(value: str) -> int:
@@ -240,9 +240,9 @@ def handle_watch(args: argparse.Namespace) -> int:
 
 def handle_install_systemd(args: argparse.Namespace) -> int:
     # Resolve executable path
-    which_bin = shutil.which("agent-signals")
+    which_bin = shutil.which("agentsignals")
     if not which_bin:
-        which_bin = str(Path.home() / ".local" / "bin" / "agent-signals")
+        which_bin = str(Path.home() / ".local" / "bin" / "agentsignals")
 
     systemd_src_dir = Path(__file__).resolve().parent.parent / "systemd"
     service_src = systemd_src_dir / "agentsignals.service"
@@ -256,10 +256,10 @@ def handle_install_systemd(args: argparse.Namespace) -> int:
     # Prepare rendered unit contents
     service_content = service_src.read_text(encoding="utf-8")
     # Replace executable if needed
-    service_content = service_content.replace("%h/.local/bin/agent-signals", which_bin)
+    service_content = service_content.replace("%h/.local/bin/agentsignals", which_bin)
     service_content = service_content.replace("%h/.local/bin/agentsignals", which_bin)
 
-    watch_content = watch_src.read_text(encoding="utf-8").replace("%h/.local/bin/agent-signals", which_bin)
+    watch_content = watch_src.read_text(encoding="utf-8").replace("%h/.local/bin/agentsignals", which_bin)
     watch_content = watch_content.replace("%h/.local/bin/agentsignals", which_bin)
     tmpfiles_content = tmpfiles_src.read_text(encoding="utf-8")
 
@@ -301,10 +301,10 @@ def handle_install_systemd(args: argparse.Namespace) -> int:
     waybar_state = patch_waybar_config(waybar_path)
     print(f"\nWaybar config: {waybar_path or '(not found)'}")
     if waybar_state == "added":
-        print("  Added custom/agent-signals to modules-right (backup saved next to the config).")
+        print("  Added custom/agentsignals to modules-right (backup saved next to the config).")
         print("  Restart Waybar to load it.")
     elif waybar_state == "present":
-        print("  custom/agent-signals already present; left unchanged.")
+        print("  custom/agentsignals already present; left unchanged.")
     else:
         print(f"  Not edited ({waybar_state}). Add it by hand:")
         print("  " + manual_snippet().replace("\n", "\n  "))
@@ -314,7 +314,7 @@ def handle_install_systemd(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="agent-signals",
+        prog="agentsignals",
         description="Monitor ephemeral Claude Code and opencode sessions and distill behavioral memories.",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging")

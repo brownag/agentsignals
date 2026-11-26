@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-MODULE_NAME = "custom/agent-signals"
+MODULE_NAME = "custom/agentsignals"
 STATUS_FILE = "/tmp/agentsignals_status.json"
 
 MODULE_BLOCK = f'''    "{MODULE_NAME}": {{
@@ -99,7 +99,7 @@ def patch_waybar_config(config_path: Optional[Path], dry_run: bool = False) -> s
         return "would-add"
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    backup = config_path.with_name(config_path.name + f".agent-signals-bak-{stamp}")
+    backup = config_path.with_name(config_path.name + f".agentsignals-bak-{stamp}")
     shutil.copy2(config_path, backup)
     config_path.write_text(edited, encoding="utf-8")
     return "added"

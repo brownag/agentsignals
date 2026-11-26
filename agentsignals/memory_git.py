@@ -17,7 +17,7 @@ from typing import List, Optional
 log = logging.getLogger(__name__)
 
 GIT_IGNORE_LINES = ["scan_status.json", "*.tmp", ".PROJECT_MEMORY.*.tmp"]
-BOT_NAME, BOT_EMAIL = "AgentSignals", "agentsignals@localhost"
+BOT_NAME, BOT_EMAIL = "agentsignals", "agentsignals@localhost"
 
 _GIT_TIMEOUT_SECONDS = 120
 _git_missing_warned = False

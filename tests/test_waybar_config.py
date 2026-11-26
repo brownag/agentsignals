@@ -37,8 +37,8 @@ def test_adds_module_to_modules_right_and_definition(tmp_path):
     data = _parse(cfg.read_text(encoding="utf-8"))
     assert MODULE_NAME in data["modules-right"]
     assert data["modules-right"][0] == MODULE_NAME
-    assert data["custom/agent-signals"]["signal"] == 8
-    assert data["custom/agent-signals"]["return-type"] == "json"
+    assert data["custom/agentsignals"]["signal"] == 8
+    assert data["custom/agentsignals"]["return-type"] == "json"
     assert data["battery"]["format"] == "{capacity}%"
     # The user's comment survives the edit.
     assert "top-level comment" in cfg.read_text(encoding="utf-8")
@@ -50,7 +50,7 @@ def test_backup_is_written_with_original_content(tmp_path):
 
     patch_waybar_config(cfg)
 
-    backups = list(tmp_path.glob("config.jsonc.agent-signals-bak-*"))
+    backups = list(tmp_path.glob("config.jsonc.agentsignals-bak-*"))
     assert len(backups) == 1
     assert backups[0].read_text(encoding="utf-8") == SAMPLE
 
@@ -63,7 +63,7 @@ def test_second_run_is_a_no_op(tmp_path):
 
     assert patch_waybar_config(cfg) == "present"
     assert cfg.read_text(encoding="utf-8") == after_first
-    assert len(list(tmp_path.glob("config.jsonc.agent-signals-bak-*"))) == 1
+    assert len(list(tmp_path.glob("config.jsonc.agentsignals-bak-*"))) == 1
 
 
 def test_dry_run_writes_nothing(tmp_path):
@@ -72,7 +72,7 @@ def test_dry_run_writes_nothing(tmp_path):
 
     assert patch_waybar_config(cfg, dry_run=True) == "would-add"
     assert cfg.read_text(encoding="utf-8") == SAMPLE
-    assert not list(tmp_path.glob("*.agent-signals-bak-*"))
+    assert not list(tmp_path.glob("*.agentsignals-bak-*"))
 
 
 def test_empty_modules_right_list(tmp_path):
@@ -100,7 +100,7 @@ def test_no_modules_right_is_manual_and_untouched(tmp_path):
 
     assert patch_waybar_config(cfg) == "manual"
     assert cfg.read_text(encoding="utf-8") == body
-    assert not list(tmp_path.glob("*.agent-signals-bak-*"))
+    assert not list(tmp_path.glob("*.agentsignals-bak-*"))
 
 
 def test_missing_config(tmp_path):
@@ -124,7 +124,7 @@ def test_generated_exec_decodes_to_status_fallback(tmp_path):
     cfg.write_text(SAMPLE, encoding="utf-8")
     patch_waybar_config(cfg)
 
-    exec_cmd = _parse(cfg.read_text(encoding="utf-8"))["custom/agent-signals"]["exec"]
+    exec_cmd = _parse(cfg.read_text(encoding="utf-8"))["custom/agentsignals"]["exec"]
     assert exec_cmd.startswith("cat /tmp/agentsignals_status.json")
     assert "🧠" in exec_cmd
     assert '{"text":"🧠"}' in exec_cmd.replace("\\", "")

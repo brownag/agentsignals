@@ -37,14 +37,14 @@ build: ## Build wheel and sdist packages
 clean: ## Clean build artifacts, caches, and test artifacts
 	@rm -rf build/ dist/ *.egg-info .pytest_cache/ .coverage htmlcov/ __pycache__ agentsignals/__pycache__ tests/__pycache__ || true
 
-scan: ## Run agent-signals on-demand scan across /tmp/claude-1000
-	agent-signals scan --no-debounce
+scan: ## Run agentsignals on-demand scan across /tmp/claude-1000
+	agentsignals scan --no-debounce
 
 distill: ## Distill unparsed dossiers into memory blocks
-	agent-signals distill
+	agentsignals distill
 
-watch: ## Run agent-signals continuous watch daemon (WATCH_INTERVAL, default 3.0 s)
-	agent-signals watch --interval $(WATCH_INTERVAL) --auto-distill
+watch: ## Run agentsignals continuous watch daemon (WATCH_INTERVAL, default 3.0 s)
+	agentsignals watch --interval $(WATCH_INTERVAL) --auto-distill
 
 systemd-dry-run: ## Preview systemd unit installation
 	$(PYTHON) -m agentsignals.cli install-systemd --dry-run
@@ -54,10 +54,10 @@ systemd-install: ## Install units, then enable the watch service
 	systemctl --user daemon-reload
 	systemctl --user enable --now agentsignals-watch.service
 
-systemd-status: ## Show status of the agent-signals watch unit
+systemd-status: ## Show status of the agentsignals watch unit
 	@systemctl --user status $(SYSTEMD_UNITS) --no-pager || true
 
-systemd-uninstall: ## Disable and remove the agent-signals user units
+systemd-uninstall: ## Disable and remove the agentsignals user units
 	-systemctl --user disable --now $(SYSTEMD_UNITS)
 	rm -f $(addprefix $(SYSTEMD_USER_DIR)/,$(SYSTEMD_UNITS))
 	systemctl --user daemon-reload

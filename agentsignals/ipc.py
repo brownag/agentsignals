@@ -16,7 +16,7 @@ def send_notification(
     title: str,
     body: str,
     urgency: str = "normal",
-    app_name: str = "AgentSignals",
+    app_name: str = "agentsignals",
     icon: Optional[str] = None,
 ) -> bool:
     """Send a desktop notification via notify-send if available."""
@@ -153,7 +153,7 @@ def emit_waybar_signal(
     payload: Dict[str, Any] = {
         "text": f"🧠 {mined_count}" if mined_count > 0 else "🧠",
         "alt": status,
-        "tooltip": f"AgentSignals: {status}\n{message}" if message else f"AgentSignals: {status}",
+        "tooltip": f"agentsignals: {status}\n{message}" if message else f"agentsignals: {status}",
         "class": status,
         "count": mined_count,
     }
@@ -226,7 +226,7 @@ def dispatch_wm_hook(
         # We can run swaymsg -q -- nop "agentsignals: <event>"
         try:
             subprocess.run(
-                [cmd[0], "-q", "--", f"nop AgentSignals {event}"],
+                [cmd[0], "-q", "--", f"nop agentsignals {event}"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=3,

@@ -61,9 +61,9 @@ dmypy.json
 *~
 .DS_Store
 
-# AgentSignals local runtime artifacts & locks
+# agentsignals local runtime artifacts & locks
 /tmp/agentsignals*
-/tmp/agent-signals*
+/tmp/agentsignals*
 .claude-mined-memories/
 
 # Temporary plan-first execution artifact

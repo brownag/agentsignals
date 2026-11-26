@@ -1,4 +1,4 @@
-# AGENTS.md - AgentSignals
+# AGENTS.md - agentsignals
 
 ## Quick Start
 
@@ -8,7 +8,7 @@
 * **Test with coverage**: `make test-cov`
 * **Lint**: `make lint` (ruff over `agentsignals/` and `tests/`)
 * **Check (lint + test)**: `make check`
-* **On-demand scan**: `make scan` (runs `agent-signals scan --no-debounce`)
+* **On-demand scan**: `make scan` (runs `agentsignals scan --no-debounce`)
 * **Distill memories**: `make distill`
 * **Watch loop (foreground)**: `make watch` (interval from `WATCH_INTERVAL`, default 3.0 s)
 * **Preview systemd units**: `make systemd-dry-run`
@@ -25,7 +25,7 @@
 * `agentsignals/memory_git.py` - git history for the memories root (`MemoryRepo`: baseline, external and pass commits)
 * `agentsignals/ipc.py` - desktop notifications (`notify-send`), Sway/Hyprland detection, Waybar signalling
 * `tests/` - pytest suite. `test_miner.py` (Claude Code), `test_source_core.py` (core loop), `test_opencode_fixture.py`, `test_opencode_source.py`, `test_opencode_schema.py`. `opencode_fixture.py` builds test databases. `conftest.py` points `OPENCODE_DB` and `XDG_DATA_HOME` at missing paths so tests never read the live database.
-* `systemd/` - unit templates (`agentsignals.service`, `agentsignals-watch.service`) and tmpfiles config. Their executable is `agent-signals`.
+* `systemd/` - unit templates (`agentsignals.service`, `agentsignals-watch.service`) and tmpfiles config. Their executable is `agentsignals`.
 * `planning/` - goals and specs (`GOALS.md`, `SPEC.md`). Read `GOALS.md` for the current goal sequence.
 * `README.md` - user-facing usage, Waybar example, test instructions
 
@@ -39,7 +39,7 @@
 ## Infrastructure
 
 * **Session source (volatile)**: `/tmp/claude-1000` (`DEFAULT_TMP_ROOT` in `miner.py`). Layout: `<slug>/<session-id>/scratchpad/`. Directories whose names don't start with `-` are skipped (see `scan_and_mine`).
-* **opencode database (read-only)**: `--opencode-db`, else `$OPENCODE_DB`, else `$XDG_DATA_HOME/opencode/opencode.db` (default `~/.local/share/opencode/opencode.db`). Opened read-only; AgentSignals never writes to it.
+* **opencode database (read-only)**: `--opencode-db`, else `$OPENCODE_DB`, else `$XDG_DATA_HOME/opencode/opencode.db` (default `~/.local/share/opencode/opencode.db`). Opened read-only; agentsignals never writes to it.
 * **Transcripts (durable)**: `~/.claude/projects/<slug>/<session-id>.jsonl`
 * **Memories root is a git repo**: `~/.claude-mined-memories/` has its own `.git`, created by the first pass. The path is unchanged by the rename. `--no-git` turns this off.
 * **Mined output (durable)**: `~/.claude-mined-memories/` (`DEFAULT_MEMORIES_ROOT`). Per session: `dossier.json`, `scratchpad/` copy, `memory.md` after distillation. Per project: `PROJECT_MEMORY.md`.
@@ -47,7 +47,7 @@
 * **Settle window**: 2 s (`SETTLE_DEBOUNCE_SECONDS`). Mining size cap per scratchpad file: 250 KiB (`MAX_SCRATCHPAD_FILE_BYTES`).
 * **Installed user units**: `~/.config/systemd/user/agentsignals.service`, `agentsignals-watch.service` (no path unit)
 * **Installed tmpfiles config**: `~/.config/user-tmpfiles.d/agentsignals.conf`
-* **Entry point**: `agent-signals` console script.
+* **Entry point**: `agentsignals` console script.
 * **Dependencies**: none at runtime (stdlib only, per `pyproject.toml` and the README). Dev: pytest, pytest-cov, ruff, mypy.
 * **Python**: 3.10 or newer.
 

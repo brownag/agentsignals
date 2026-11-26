@@ -1,10 +1,10 @@
 [Unit]
-Description=AgentSignals Continuous Session Watcher
-Documentation=https://github.com/example/agent-signals
+Description=agentsignals Continuous Session Watcher
+Documentation=https://github.com/example/agentsignals
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/agent-signals watch
+ExecStart=%h/.local/bin/agentsignals watch
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

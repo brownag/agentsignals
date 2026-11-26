@@ -1,10 +1,6 @@
-# AgentSignals
+# agentsignals
 
-Lightweight, zero-maintenance background daemon and CLI toolkit designed to monitor `/tmp/claude-1000/` (and related ephemeral session folders), intercept volatile Claude Code scratchpads and conversation transcripts before they are wiped, separate Git-discernable state from behavioral signals, and distill actionable memory rules for future agent workflows.
-
-The package is `agent-signals` (`agentsignals` in Python), with the `agent-signals`
-command. Session and memory paths, including `/tmp/claude-1000` and
-`~/.claude-mined-memories`, are unchanged.
+A background daemon and CLI that watches `/tmp/claude-1000/` and related session folders. agentsignals saves Claude Code scratchpads and transcripts before they are wiped. It separates Git-tracked state from behavioral signals, then distills memory rules for future agent runs.
 
 ---
 
@@ -13,24 +9,24 @@ command. Session and memory paths, including `/tmp/claude-1000` and
 1. **Ephemeral vs. Persistent Separation:**
    - Scans `/tmp/claude-1000/` for active and abandoned session workspaces.
    - Cross-references with persistent JSONL transcripts in `~/.claude/projects/<slug>/<session-id>.jsonl`.
-   - **Filters out Git-discernable noise:** Ignores successful `git diff`, `git status`, and `git log` calls, and successful Edit/Write results, because Git history already tracks them. Clean test passes are not filtered.
-   - **Preserves behavioral signals:** Captures failed tool results (including failed git commands), non-zero command exit codes (exit code 0 is not kept as a failure), recurring error loops, aborted scratchpad scripts, transient API debug logs, and prompt objectives defining user intent.
+   - **Filters out noise Git already tracks:** Drops successful `git diff`, `git status`, and `git log` calls, and successful Edit/Write results. Clean test passes are kept.
+   - **Keeps behavioral signals:** Failed tool results (including failed git commands), non-zero exit codes (exit 0 is not a failure), recurring error loops, aborted scratchpad scripts, transient API debug logs, and the prompts that state user intent.
 
 2. **Dossiers & Distillation:**
    - Generates structured session dossiers in `~/.claude-mined-memories/<project-slug>/<session-id>/dossier.json`.
-   - Distills actionable memory blocks in `memory.md` and appends to `PROJECT_MEMORY.md`:
+   - Distills memory into `memory.md` and appends to `PROJECT_MEMORY.md`:
      - **Tool / Skill Friction:** Specific flag mismatches, command failures, or CLI quirks.
      - **Blind Alleys & Discarded Spikes:** Techniques tested and why they failed.
-     - **Directives:** Compact, imperative rules for future runs (compatible with `.claude/CLAUDE.md`).
-   - Needs a local OpenAI-compatible LLM endpoint (Ollama, `llama.cpp`). There is no offline fallback: without an endpoint, or when the LLM returns nothing, no memory is written and existing memory files are left alone. `agent-signals distill` exits with code 2 when no endpoint is set.
+     - **Directives:** Short imperative rules for future runs. They work in `.claude/CLAUDE.md`.
+   - Needs a local OpenAI-compatible LLM endpoint (Ollama, `llama.cpp`). There is no offline fallback: without an endpoint, or when the LLM returns nothing, no memory is written and existing memory files are left alone. `agentsignals distill` exits with code 2 when no endpoint is set.
 
 3. **IPC & Window Manager Integration:**
    - Desktop notifications via `notify-send`.
    - Wayland compositor hooks refresh Waybar without an extra desktop popup.
    - Waybar custom JSON status module output at `/tmp/agentsignals_status.json` (kept for compatibility).
 
-4. **Zero Heavyweight Dependencies:**
-   - Implemented using Python 3 standard library (`json`, `urllib`, `pathlib`, `fcntl`, `subprocess`).
+4. **No Runtime Dependencies:**
+   - Uses only the Python 3 standard library: `json`, `urllib`, `pathlib`, `fcntl`, `subprocess`.
 
 ---
 
@@ -48,47 +44,47 @@ pip install -e . --no-deps --user
 ### 1. On-Demand Scan
 ```bash
 # Scan all ephemeral sessions and extract dossiers
-agent-signals scan
+agentsignals scan
 
 # Opt in to a desktop notification when sessions are mined
-agent-signals scan --notify
+agentsignals scan --notify
 
 # Retain the most recent 100 scans
-agent-signals scan --history-limit 100
+agentsignals scan --history-limit 100
 
 # Scan with automatic memory distillation
-agent-signals scan --auto-distill
+agentsignals scan --auto-distill
 ```
 
 ### 2. Distill Memories
 ```bash
 # Distill unparsed dossiers into Markdown memory blocks
-agent-signals distill
+agentsignals distill
 
 # Distill with local Ollama / llama.cpp OpenAI-compatible endpoint
-agent-signals distill --llm-endpoint http://localhost:11434/v1/chat/completions --llm-model llama3
+agentsignals distill --llm-endpoint http://localhost:11434/v1/chat/completions --llm-model llama3
 ```
 
 ### 3. Continuous Watch Daemon
 ```bash
 # Run continuous polling / file debounce loop without desktop notifications
-agent-signals watch --interval 5.0
+agentsignals watch --interval 5.0
 
 # Opt in to notifications and disable individual history records
-agent-signals watch --interval 5.0 --notify --history-limit 0
+agentsignals watch --interval 5.0 --notify --history-limit 0
 ```
 
-Notifications are off by default for both `scan` and `watch`. With `--notify`, each scan that mines at least one session sends one aggregate desktop notification; scans that mine nothing send none. Watch automatically distills mined sessions when an LLM endpoint is set (`--llm-endpoint`, or `AGENTSIGNALS_LLM_ENDPOINT`); without one it logs a warning and only mines. Pass `--no-auto-distill` to turn distillation off. The supplied systemd watch unit runs `agent-signals watch` without `--notify`.
+Notifications are off by default for both `scan` and `watch`. With `--notify`, each scan that mines at least one session sends one aggregate desktop notification; scans that mine nothing send none. Watch automatically distills mined sessions when an LLM endpoint is set (`--llm-endpoint`, or `AGENTSIGNALS_LLM_ENDPOINT`); without one it logs a warning and only mines. Pass `--no-auto-distill` to turn distillation off. The supplied systemd watch unit runs `agentsignals watch` without `--notify`.
 
-Both commands accept a non-negative `--history-limit`, defaulting to 50 recent scans. A limit of 0 removes individual history records while retaining the latest scan and cumulative totals. To use a different memories root, put the global option before the command, for example `agent-signals --memories-root /path/to/memories scan --history-limit 100`.
+Both commands accept a non-negative `--history-limit`, defaulting to 50 recent scans. A limit of 0 removes individual history records while retaining the latest scan and cumulative totals. To use a different memories root, put the global option before the command, for example `agentsignals --memories-root /path/to/memories scan --history-limit 100`.
 
 ### 4. Systemd Service & Watch Unit Installation
 ```bash
 # Dry run to inspect generated unit files
-agent-signals install-systemd --dry-run
+agentsignals install-systemd --dry-run
 
 # Install user systemd units (~/.config/systemd/user/)
-agent-signals install-systemd
+agentsignals install-systemd
 
 # Enable and start the watch daemon
 systemctl --user daemon-reload
@@ -99,11 +95,11 @@ systemctl --user enable --now agentsignals-watch.service
 
 ## opencode Sessions
 
-agent-signals also mines [opencode](https://opencode.ai) sessions from its SQLite database. It mines user prompts, tool errors, failed shell commands, failed turns and the paths of touched files. It does not keep file content.
+agentsignals also mines [opencode](https://opencode.ai) sessions from its SQLite database. It mines user prompts, tool errors, failed shell commands, failed turns and the paths of touched files. It does not keep file content.
 
 The database path is resolved in this order: the `--opencode-db` flag, the `OPENCODE_DB` environment variable, then `$XDG_DATA_HOME/opencode/opencode.db` (default `~/.local/share/opencode/opencode.db`). Databases for other release channels (`opencode-<channel>.db`) are not found automatically. Pass them with `--opencode-db`.
 
-Access is read-only. agent-signals never writes to the database.
+Access is read-only. agentsignals never writes to the database.
 
 Subagent sessions are folded into their parent session, so each session family produces one dossier.
 
@@ -111,13 +107,13 @@ opencode and Claude Code sessions for the same directory share one `PROJECT_MEMO
 
 ```bash
 # Default: mine both sources
-agent-signals scan
+agentsignals scan
 
 # Mine only Claude Code sessions (the database is never opened)
-agent-signals --source claude scan
+agentsignals --source claude scan
 
 # Use a database from another release channel
-agent-signals --opencode-db ~/.local/share/opencode/opencode-dev.db scan
+agentsignals --opencode-db ~/.local/share/opencode/opencode-dev.db scan
 ```
 
 `--source` takes a comma-separated list from `claude,opencode`. The default is `claude,opencode`. Both flags are global options and go before the command.
@@ -128,7 +124,7 @@ agent-signals --opencode-db ~/.local/share/opencode/opencode-dev.db scan
 
 Add a custom module in `~/.config/waybar/config`:
 ```json
-"custom/agent-signals": {
+"custom/agentsignals": {
     "format": "{}",
     "return-type": "json",
     "exec": "cat /tmp/agentsignals_status.json 2>/dev/null || echo '{\"text\":\"🧠\"}'",
@@ -142,7 +138,7 @@ The watcher sends `pkill -RTMIN+8 waybar` after each status write, so the module
 
 The module text uses a stable `🧠 active | total mined` layout (for example, `🧠 1 | 42`); the first number is sessions still changing, and the second is the cumulative number mined. Hover for labeled counts, the latest scan time, last project (when available), cumulative totals, and up to three recent scans that mined sessions. Empty scans are omitted from that history.
 
-Scan state is stored separately from the temporary Waybar payload in `<memories-root>/scan_status.json` (by default `~/.claude-mined-memories/scan_status.json`). It is atomically written after each completed scan, including scans that mine nothing, and is available across process restarts. Missing or corrupt state starts fresh; if writing fails, mining can continue without persistence. Compositor hooks refresh Waybar without creating an additional desktop popup.
+Scan state is stored separately from the temporary Waybar payload in `<memories-root>/scan_status.json` (by default `~/.claude-mined-memories/scan_status.json`). It is written atomically after every scan, including empty ones, and survives restarts. Missing or corrupt state starts fresh. If writing fails, mining continues without saving state. Compositor hooks refresh Waybar without creating an additional desktop popup.
 
 ---
 
@@ -170,8 +166,8 @@ Mined memories live in `~/.claude-mined-memories/`. That directory is a git repo
   ```
 
 - **Ignored files.** `scan_status.json` and temporary files (`*.tmp`, `.PROJECT_MEMORY.*.tmp`) are not committed.
-- **Turn it off.** Pass the global `--no-git` flag, for example `agent-signals --no-git scan`.
-- **Commit identity.** Commits use `AgentSignals <agentsignals@localhost>`, whatever your global git config says.
+- **Turn it off.** Pass the global `--no-git` flag, for example `agentsignals --no-git scan`.
+- **Commit identity.** Commits use `agentsignals <agentsignals@localhost>`, whatever your global git config says.
 
 An unchanged re-mine does not rewrite `dossier.json`. `watch` re-mines a session at most once every 60 seconds. A re-mine skipped for that reason is counted as "re-mined less than 60 s ago" in the scan summary. `scan` is not throttled.
 

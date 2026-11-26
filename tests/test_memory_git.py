@@ -151,8 +151,8 @@ def test_commits_use_bot_identity(tmp_path, monkeypatch):
     (root / "a.json").write_text("{}", encoding="utf-8")
     repo.commit_pass("scan: 1", ["x"])
     assert _git(root, "log", "--format=%an <%ae>").splitlines() == [
-        "AgentSignals <agentsignals@localhost>",
-        "AgentSignals <agentsignals@localhost>",
+        "agentsignals <agentsignals@localhost>",
+        "agentsignals <agentsignals@localhost>",
     ]
 
 

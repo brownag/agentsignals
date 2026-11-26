@@ -1,10 +1,10 @@
 [Unit]
-Description=AgentSignals Session Miner and Behavioral Memory Distiller
-Documentation=https://github.com/example/agent-signals
+Description=agentsignals Session Miner and Behavioral Memory Distiller
+Documentation=https://github.com/example/agentsignals
 
 [Service]
 Type=oneshot
-ExecStart=%h/.local/bin/agent-signals scan --notify
+ExecStart=%h/.local/bin/agentsignals scan --notify
 StandardOutput=journal
 StandardError=journal
 Nice=19
