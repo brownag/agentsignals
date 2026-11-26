@@ -26,6 +26,8 @@ DEFAULT_LOCK_FILE = Path("/tmp/claudalizer.lock")
 MAX_SCRATCHPAD_FILE_BYTES = 250 * 1024  # 250 KB
 MIN_PROMPT_LENGTH = 15
 SETTLE_DEBOUNCE_SECONDS = 2.0
+# The watch loop does not re-mine a session whose dossier is younger than this.
+WATCH_MIN_REMINE_SECONDS = 60.0
 
 
 @dataclass

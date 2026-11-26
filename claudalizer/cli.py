@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from claudalizer.distiller import MemoryDistiller
+from claudalizer.memory_git import MemoryRepo
 from claudalizer.ipc import dispatch_wm_hook, emit_waybar_signal, record_scan, send_notification
 from claudalizer.sources.claude_code import ClaudeCodeSource
 from claudalizer.sources.opencode import OpencodeSource
@@ -20,6 +21,7 @@ from claudalizer.miner import (
     DEFAULT_LOCK_FILE,
     DEFAULT_MEMORIES_ROOT,
     DEFAULT_TMP_ROOT,
+    WATCH_MIN_REMINE_SECONDS,
     SessionMiner,
 )
 
@@ -74,11 +76,14 @@ def resolve_llm_settings(args: argparse.Namespace) -> Tuple[Optional[str], str]:
 def format_skip_summary(skipped: dict) -> str:
     """One-line account of sessions a scan did not mine, plus the still-active ones by name."""
     active = skipped.get("active", [])
-    lines = [
+    first = (
         f"Skipped: {len(active)} active (still changing; picked up on a later scan), "
         f"{skipped.get('up_to_date', 0)} already up to date, "
-        f"{skipped.get('no_content', 0)} with no content."
-    ]
+        f"{skipped.get('no_content', 0)} with no content"
+    )
+    if skipped.get("recent"):
+        first += f", {skipped['recent']} re-mined less than {int(WATCH_MIN_REMINE_SECONDS)} s ago"
+    lines = [first + "."]
     for name in active:
         lines.append(f"  • still active: {name}")
     return "\n".join(lines)
@@ -93,6 +98,10 @@ def _source_list(value: str) -> list:
         if name not in names:
             names.append(name)
     return names
+
+
+def build_repo(args: argparse.Namespace) -> MemoryRepo:
+    return MemoryRepo(Path(args.memories_root), enabled=not args.no_git)
 
 
 def build_sources(args: argparse.Namespace, watch: bool) -> list:
@@ -112,6 +121,7 @@ def handle_scan(args: argparse.Namespace) -> int:
         memories_root=Path(args.memories_root),
         lock_file=Path(args.lock_file),
         sources=build_sources(args, watch=False),
+        repo=build_repo(args),
     )
 
     logger.info(f"Scanning {args.tmp_root}...")
@@ -133,7 +143,8 @@ def handle_scan(args: argparse.Namespace) -> int:
         logger.warning("No LLM endpoint set (--llm-endpoint or CLAUDALIZER_LLM_ENDPOINT); memories are not distilled.")
     elif args.auto_distill and dossiers:
         logger.info("Running automatic distillation on mined sessions...")
-        distiller = MemoryDistiller(memories_root=Path(args.memories_root))
+        distiller = MemoryDistiller(memories_root=Path(args.memories_root), repo=build_repo(args),
+                                    lock_file=Path(args.lock_file))
         for d in dossiers:
             distiller.distill_session(
                 d.slug,
@@ -142,6 +153,7 @@ def handle_scan(args: argparse.Namespace) -> int:
                 llm_model=resolve_llm_settings(args)[1],
                 force=args.force,
             )
+        distiller.commit_pass("distill")
 
     return 0
 
@@ -150,7 +162,8 @@ def handle_distill(args: argparse.Namespace) -> int:
     if not resolve_llm_settings(args)[0]:
         logger.error("No LLM endpoint set (--llm-endpoint or CLAUDALIZER_LLM_ENDPOINT); memories are not distilled.")
         return 2
-    distiller = MemoryDistiller(memories_root=Path(args.memories_root))
+    distiller = MemoryDistiller(memories_root=Path(args.memories_root), repo=build_repo(args),
+                                lock_file=Path(args.lock_file))
     logger.info(f"Distilling sessions from {args.memories_root}...")
 
     distilled = distiller.distill_all(
@@ -178,8 +191,14 @@ def handle_watch(args: argparse.Namespace) -> int:
         memories_root=Path(args.memories_root),
         lock_file=Path(args.lock_file),
         sources=build_sources(args, watch=True),
+        min_remine_seconds=WATCH_MIN_REMINE_SECONDS,
+        repo=build_repo(args),
     )
-    distiller = MemoryDistiller(memories_root=Path(args.memories_root)) if args.auto_distill else None
+    distiller = (
+        MemoryDistiller(memories_root=Path(args.memories_root), repo=build_repo(args),
+                        lock_file=Path(args.lock_file))
+        if args.auto_distill else None
+    )
     if distiller and not resolve_llm_settings(args)[0]:
         logger.warning("No LLM endpoint set (--llm-endpoint or CLAUDALIZER_LLM_ENDPOINT); memories are not distilled.")
         distiller = None
@@ -202,6 +221,8 @@ def handle_watch(args: argparse.Namespace) -> int:
                                 llm_endpoint=resolve_llm_settings(args)[0],
                                 llm_model=resolve_llm_settings(args)[1],
                             )
+                    if distiller:
+                        distiller.commit_pass("distill")
             except Exception as e:
                 logger.error(f"Error in watch cycle: {e}")
 
@@ -299,6 +320,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--source", type=_source_list, default="claude,opencode", help="Comma-separated sources to mine: claude, opencode (default: both)")
     parser.add_argument("--opencode-db", default=None, help="Path to opencode.db (default: $OPENCODE_DB or XDG data dir)")
     parser.add_argument("--lock-file", default=str(DEFAULT_LOCK_FILE), help="File path for synchronization lock")
+    parser.add_argument("--no-git", action="store_true", help="Do not record memory changes in git")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
