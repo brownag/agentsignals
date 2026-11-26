@@ -18,7 +18,7 @@ Lightweight, zero-maintenance background daemon and CLI toolkit designed to moni
      - **Tool / Skill Friction:** Specific flag mismatches, command failures, or CLI quirks.
      - **Blind Alleys & Discarded Spikes:** Techniques tested and why they failed.
      - **Directives:** Compact, imperative rules for future runs (compatible with `.claude/CLAUDE.md`).
-   - Supports local OpenAI-compatible LLM endpoints (Ollama, `llama.cpp`) with automatic offline deterministic fallback synthesis.
+   - Needs a local OpenAI-compatible LLM endpoint (Ollama, `llama.cpp`). There is no offline fallback: without an endpoint, or when the LLM returns nothing, no memory is written and existing memory files are left alone. `claudalizer distill` exits with code 2 when no endpoint is set.
 
 3. **IPC & Window Manager Integration:**
    - Desktop notifications via `notify-send`.
@@ -74,7 +74,7 @@ claudalizer watch --interval 5.0
 claudalizer watch --interval 5.0 --notify --history-limit 0
 ```
 
-Notifications are off by default for both `scan` and `watch`. With `--notify`, each scan that mines at least one session sends one aggregate desktop notification; scans that mine nothing send none. Watch automatically distills mined sessions; pass `--no-auto-distill` to turn that off. The supplied systemd watch unit runs `claudalizer watch` without `--notify`.
+Notifications are off by default for both `scan` and `watch`. With `--notify`, each scan that mines at least one session sends one aggregate desktop notification; scans that mine nothing send none. Watch automatically distills mined sessions when an LLM endpoint is set (`--llm-endpoint` or `CLAUDALIZER_LLM_ENDPOINT`); without one it logs a warning and only mines. Pass `--no-auto-distill` to turn distillation off. The supplied systemd watch unit runs `claudalizer watch` without `--notify`.
 
 Both commands accept a non-negative `--history-limit`, defaulting to 50 recent scans. A limit of 0 removes individual history records while retaining the latest scan and cumulative totals. To use a different memories root, put the global option before the command, for example `claudalizer --memories-root /path/to/memories scan --history-limit 100`.
 

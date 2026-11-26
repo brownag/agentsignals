@@ -167,7 +167,7 @@ def test_watch_builds_opencode_source_with_precheck(tmp_path, monkeypatch):
     assert oc[0].skip_if_unchanged is False
 
 
-def test_both_sources_share_project_memory(tmp_path):
+def test_both_sources_share_project_memory(tmp_path, fake_llm):
     import os
     import time
 
@@ -207,6 +207,38 @@ def test_both_sources_share_project_memory(tmp_path):
         lock_file=tmp_path / "lock", sources=cli.build_sources(args, watch=False),
     )
     assert len(miner.scan_and_mine(debounce=False)) == 2
-    MemoryDistiller(memories_root=memories).distill_all()
+    MemoryDistiller(memories_root=memories).distill_all(llm_endpoint="http://127.0.0.1:9/v1")
     text = (memories / slug / "PROJECT_MEMORY.md").read_text(encoding="utf-8")
     assert text.count("## Session") == 2
+
+
+def test_distill_without_endpoint_fails_and_writes_nothing(tmp_path, monkeypatch, caplog):
+    monkeypatch.delenv("CLAUDALIZER_LLM_ENDPOINT", raising=False)
+    sess = tmp_path / "memories" / "-slug-a" / "abcdef12-3456"
+    sess.mkdir(parents=True)
+    (sess / "dossier.json").write_text(json.dumps({"slug": "-slug-a", "user_prompts": ["Fix the build please"]}), encoding="utf-8")
+    args = _args(tmp_path, "distill", "--force")
+
+    assert cli.handle_distill(args) == 2
+    assert "No LLM endpoint set" in caplog.text
+    assert not (sess / "memory.md").exists()
+
+
+def test_watch_without_endpoint_does_not_distill(tmp_path, monkeypatch, caplog):
+    monkeypatch.delenv("CLAUDALIZER_LLM_ENDPOINT", raising=False)
+    dossier = SimpleNamespace(slug="-slug-a", session_id="s1", tool_errors=[], scratchpad_files=[])
+    monkeypatch.setattr(cli, "SessionMiner", _fake_miner([[dossier]]))
+    calls = []
+    monkeypatch.setattr(cli.MemoryDistiller, "distill_session", lambda *a, **k: calls.append(a))
+    monkeypatch.setattr(cli, "dispatch_wm_hook", lambda *a: None)
+
+    def sleep(_):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli.time, "sleep", sleep)
+    args = _args(tmp_path, "watch")
+    args.auto_distill = True
+
+    assert cli.handle_watch(args) == 0
+    assert calls == []
+    assert "No LLM endpoint set" in caplog.text

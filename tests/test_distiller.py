@@ -11,7 +11,12 @@ import json
 
 
 import claudalizer.distiller as distiller_mod
-from claudalizer.distiller import MemoryDistiller, build_synthesis_prompt, frame_llm_block, synthesize_offline_memory_block
+from claudalizer.distiller import MemoryDistiller, build_synthesis_prompt, frame_llm_block
+
+
+EP = "http://127.0.0.1:9/v1"
+LLM_SECTIONS = "### 1. Tool / Skill Friction\n- None.\n\n### 2. Blind Alleys & Discarded Spikes\n- None.\n\n### 3. Directives for CLAUDE.md\n- None.\n"
+
 
 
 def _write_dossier(root, slug, session_id, dossier):
@@ -45,22 +50,13 @@ def _section(text, heading):
 # --- Characterisation tests (must pass on current code) ----------------------------------
 
 
-def test_offline_block_has_three_sections_in_order():
-    block = synthesize_offline_memory_block(_dossier())
-    headings = [
-        "### 1. Tool / Skill Friction",
-        "### 2. Blind Alleys & Discarded Spikes",
-        "### 3. Directives for CLAUDE.md",
-    ]
-    positions = [block.index(h) for h in headings]
-    assert positions == sorted(positions)
 
 
-def test_distill_session_writes_memory_md_and_project_memory(tmp_path):
+def test_distill_session_writes_memory_md_and_project_memory(tmp_path, fake_llm):
     root = tmp_path / "memories"
     _write_dossier(root, "-slug-a", "abcdef12-3456", _dossier(slug="-slug-a"))
 
-    res = MemoryDistiller(memories_root=root).distill_session("-slug-a", "abcdef12-3456")
+    res = MemoryDistiller(memories_root=root).distill_session("-slug-a", "abcdef12-3456", llm_endpoint=EP)
 
     assert res is not None and res.exists()
     assert res.name == "memory.md"
@@ -68,20 +64,20 @@ def test_distill_session_writes_memory_md_and_project_memory(tmp_path):
     assert "## Session abcdef12 Distillation" in project
 
 
-def test_distill_session_skips_existing_memory_without_force(tmp_path):
+def test_distill_session_skips_existing_memory_without_force(tmp_path, fake_llm):
     root = tmp_path / "memories"
     _write_dossier(root, "-slug-a", "abcdef12-3456", _dossier(slug="-slug-a"))
     distiller = MemoryDistiller(memories_root=root)
 
-    first = distiller.distill_session("-slug-a", "abcdef12-3456")
+    first = distiller.distill_session("-slug-a", "abcdef12-3456", llm_endpoint=EP)
     project_after_first = (root / "-slug-a" / "PROJECT_MEMORY.md").read_text(encoding="utf-8")
-    second = distiller.distill_session("-slug-a", "abcdef12-3456")
+    second = distiller.distill_session("-slug-a", "abcdef12-3456", llm_endpoint=EP)
 
     assert second == first
     assert (root / "-slug-a" / "PROJECT_MEMORY.md").read_text(encoding="utf-8") == project_after_first
 
 
-def test_llm_block_used_when_endpoint_returns_content(tmp_path, monkeypatch):
+def test_llm_block_used_when_endpoint_returns_content(tmp_path, monkeypatch, fake_llm):
     root = tmp_path / "memories"
     _write_dossier(root, "-slug-a", "abcdef12-3456", _dossier(slug="-slug-a"))
     monkeypatch.setattr(distiller_mod, "call_llm_completion", lambda *a, **k: "LLM BLOCK")
@@ -93,43 +89,54 @@ def test_llm_block_used_when_endpoint_returns_content(tmp_path, monkeypatch):
     assert "LLM BLOCK" in res.read_text(encoding="utf-8")
 
 
-def test_offline_fallback_when_llm_returns_nothing(tmp_path, monkeypatch):
+def test_no_memory_written_when_llm_returns_nothing(tmp_path, monkeypatch, fake_llm):
     root = tmp_path / "memories"
     _write_dossier(root, "-slug-a", "abcdef12-3456", _dossier(slug="-slug-a"))
     monkeypatch.setattr(distiller_mod, "call_llm_completion", lambda *a, **k: None)
 
-    res = MemoryDistiller(memories_root=root).distill_session(
-        "-slug-a", "abcdef12-3456", llm_endpoint="http://127.0.0.1:9/v1"
-    )
+    res = MemoryDistiller(memories_root=root).distill_session("-slug-a", "abcdef12-3456", llm_endpoint=EP)
 
-    assert "# Mined Behavioral Memory" in res.read_text(encoding="utf-8")
+    assert res is None
+    assert not (root / "-slug-a" / "abcdef12-3456" / "memory.md").exists()
+    assert not (root / "-slug-a" / "PROJECT_MEMORY.md").exists()
 
 
-def test_distill_all_respects_target_slug(tmp_path):
+def test_failed_llm_keeps_existing_memory_on_force(tmp_path, monkeypatch, fake_llm):
+    root = tmp_path / "memories"
+    sess = _write_dossier(root, "-slug-a", "abcdef12-3456", _dossier(slug="-slug-a"))
+    (sess / "memory.md").write_text("old memory\n", encoding="utf-8")
+    monkeypatch.setattr(distiller_mod, "call_llm_completion", lambda *a, **k: None)
+
+    res = MemoryDistiller(memories_root=root).distill_session("-slug-a", "abcdef12-3456", llm_endpoint=EP, force=True)
+
+    assert res is None
+    assert (sess / "memory.md").read_text(encoding="utf-8") == "old memory\n"
+
+
+def test_no_endpoint_writes_nothing_and_makes_no_call(tmp_path, monkeypatch):
+    root = tmp_path / "memories"
+    sess = _write_dossier(root, "-slug-a", "abcdef12-3456", _dossier(slug="-slug-a"))
+    calls = []
+    monkeypatch.setattr(distiller_mod, "call_llm_completion", lambda *a, **k: calls.append(a) or "X")
+
+    assert MemoryDistiller(memories_root=root).distill_session("-slug-a", "abcdef12-3456", force=True) is None
+    assert MemoryDistiller(memories_root=root).distill_all(force=True) == []
+    assert calls == []
+    assert not (sess / "memory.md").exists()
+
+
+def test_distill_all_respects_target_slug(tmp_path, fake_llm):
     root = tmp_path / "memories"
     _write_dossier(root, "-slug-a", "sess-a-0001", _dossier(slug="-slug-a", session_id="sess-a-0001"))
     _write_dossier(root, "-slug-b", "sess-b-0001", _dossier(slug="-slug-b", session_id="sess-b-0001"))
 
-    out = MemoryDistiller(memories_root=root).distill_all(target_slug="-slug-a")
+    out = MemoryDistiller(memories_root=root).distill_all(target_slug="-slug-a", llm_endpoint=EP)
 
     assert len(out) == 1
     assert "-slug-a" in str(out[0])
     assert not (root / "-slug-b" / "PROJECT_MEMORY.md").exists()
 
 
-def test_python_error_maps_to_venv_directive():
-    dossier = _dossier(
-        tool_errors=[
-            {
-                "tool_name": "Bash",
-                "command_or_input": "python run.py",
-                "error_output": "Exit code 127\nNo such file or directory: 'python'",
-                "exit_code": 127,
-            }
-        ]
-    )
-    block = synthesize_offline_memory_block(dossier)
-    assert "Verify Python virtualenv or conda environment path" in block
 
 
 def test_synthesis_prompt_mentions_errors_and_scratchpads():
@@ -152,25 +159,25 @@ def test_synthesis_prompt_mentions_errors_and_scratchpads():
 # --- Strict xfail: target behaviour owned by G18-G21 -------------------------------------
 
 
-def test_force_redistill_does_not_duplicate_project_section(tmp_path):
+def test_force_redistill_does_not_duplicate_project_section(tmp_path, fake_llm):
     root = tmp_path / "memories"
     _write_dossier(root, "-slug-a", "abcdef12-3456", _dossier(slug="-slug-a"))
     distiller = MemoryDistiller(memories_root=root)
 
-    distiller.distill_session("-slug-a", "abcdef12-3456")
-    distiller.distill_session("-slug-a", "abcdef12-3456", force=True)
+    distiller.distill_session("-slug-a", "abcdef12-3456", llm_endpoint=EP)
+    distiller.distill_session("-slug-a", "abcdef12-3456", force=True, llm_endpoint=EP)
 
     project = (root / "-slug-a" / "PROJECT_MEMORY.md").read_text(encoding="utf-8")
     assert project.count("## Session abcdef12 Distillation") == 1
 
 
-def test_rebuild_changes_only_the_redistilled_session_text(tmp_path):
+def test_rebuild_changes_only_the_redistilled_session_text(tmp_path, fake_llm):
     root = tmp_path / "memories"
     _write_dossier(root, "-slug-a", "aaaa1111-0001", _dossier(slug="-slug-a", session_id="aaaa1111-0001", scan_timestamp="2026-01-01"))
     _write_dossier(root, "-slug-a", "bbbb2222-0002", _dossier(slug="-slug-a", session_id="bbbb2222-0002", scan_timestamp="2026-01-02"))
     distiller = MemoryDistiller(memories_root=root)
-    distiller.distill_session("-slug-a", "aaaa1111-0001")
-    distiller.distill_session("-slug-a", "bbbb2222-0002")
+    distiller.distill_session("-slug-a", "aaaa1111-0001", llm_endpoint=EP)
+    distiller.distill_session("-slug-a", "bbbb2222-0002", llm_endpoint=EP)
 
     dossier_a = _dossier(
         slug="-slug-a",
@@ -179,7 +186,7 @@ def test_rebuild_changes_only_the_redistilled_session_text(tmp_path):
         tool_errors=[{"tool_name": "Bash", "command_or_input": "make NEWA", "error_output": "Error: NEWA failed", "exit_code": 2}],
     )
     (root / "-slug-a" / "aaaa1111-0001" / "dossier.json").write_text(json.dumps(dossier_a), encoding="utf-8")
-    distiller.distill_session("-slug-a", "aaaa1111-0001", force=True)
+    distiller.distill_session("-slug-a", "aaaa1111-0001", force=True, llm_endpoint=EP)
 
     project = (root / "-slug-a" / "PROJECT_MEMORY.md").read_text(encoding="utf-8")
     assert project.count("make NEWA") == 1
@@ -188,130 +195,67 @@ def test_rebuild_changes_only_the_redistilled_session_text(tmp_path):
     assert project.index("## Session aaaa1111") < project.index("## Session bbbb2222")
 
 
-def test_rebuild_orders_sessions_by_scan_timestamp(tmp_path):
+def test_rebuild_orders_sessions_by_scan_timestamp(tmp_path, fake_llm):
     root = tmp_path / "memories"
     _write_dossier(root, "-slug-a", "zzzz0000-0001", _dossier(slug="-slug-a", session_id="zzzz0000-0001", scan_timestamp="2026-01-02"))
     _write_dossier(root, "-slug-a", "aaaa0000-0002", _dossier(slug="-slug-a", session_id="aaaa0000-0002", scan_timestamp="2026-01-01"))
     distiller = MemoryDistiller(memories_root=root)
-    distiller.distill_session("-slug-a", "zzzz0000-0001")
-    distiller.distill_session("-slug-a", "aaaa0000-0002")
+    distiller.distill_session("-slug-a", "zzzz0000-0001", llm_endpoint=EP)
+    distiller.distill_session("-slug-a", "aaaa0000-0002", llm_endpoint=EP)
 
     project = (root / "-slug-a" / "PROJECT_MEMORY.md").read_text(encoding="utf-8")
     assert project.index("## Session aaaa0000") < project.index("## Session zzzz0000")
 
 
-def test_rebuild_skips_session_without_memory_md(tmp_path):
+def test_rebuild_skips_session_without_memory_md(tmp_path, fake_llm):
     root = tmp_path / "memories"
     _write_dossier(root, "-slug-a", "abcdef12-3456", _dossier(slug="-slug-a"))
     _write_dossier(root, "-slug-a", "nomemo00-0001", _dossier(slug="-slug-a", session_id="nomemo00-0001"))
     distiller = MemoryDistiller(memories_root=root)
-    distiller.distill_session("-slug-a", "abcdef12-3456")
+    distiller.distill_session("-slug-a", "abcdef12-3456", llm_endpoint=EP)
 
     project =(root / "-slug-a" / "PROJECT_MEMORY.md").read_text(encoding="utf-8")
     assert "## Session nomemo00" not in project
     assert "## Session abcdef12" in project
 
 
-def test_rebuild_is_idempotent(tmp_path):
+def test_rebuild_is_idempotent(tmp_path, fake_llm):
     root = tmp_path / "memories"
     _write_dossier(root, "-slug-a", "abcdef12-3456", _dossier(slug="-slug-a"))
     distiller = MemoryDistiller(memories_root=root)
-    distiller.distill_session("-slug-a", "abcdef12-3456")
+    distiller.distill_session("-slug-a", "abcdef12-3456", llm_endpoint=EP)
     path = root / "-slug-a" / "PROJECT_MEMORY.md"
     first = path.read_bytes()
 
-    distiller.distill_session("-slug-a", "abcdef12-3456", force=True)
+    distiller.distill_session("-slug-a", "abcdef12-3456", force=True, llm_endpoint=EP)
 
     assert path.read_bytes() == first
 
 
-def test_rebuild_discards_hand_edits_outside_session_files(tmp_path):
+def test_rebuild_discards_hand_edits_outside_session_files(tmp_path, fake_llm):
     root = tmp_path / "memories"
     proj = root / "-slug-a"
     proj.mkdir(parents=True)
     (proj / "PROJECT_MEMORY.md").write_text("hand notes\n", encoding="utf-8")
     _write_dossier(root, "-slug-a", "abcdef12-3456", _dossier(slug="-slug-a"))
 
-    MemoryDistiller(memories_root=root).distill_session("-slug-a", "abcdef12-3456")
+    MemoryDistiller(memories_root=root).distill_session("-slug-a", "abcdef12-3456", llm_endpoint=EP)
 
     project = (proj / "PROJECT_MEMORY.md").read_text(encoding="utf-8")
     assert "hand notes" not in project
     assert "## Session abcdef12 Distillation" in project
 
 
-def test_no_matching_error_shows_none_detected_not_fallback_directive():
-    block = synthesize_offline_memory_block(_dossier(tool_errors=[]))
-    directives = _section(block, "### 3. Directives for CLAUDE.md")
-    assert "Maintain strict idempotency" not in directives
-    assert "None detected" in directives
 
 
-def test_directives_none_detected_when_errors_match_no_pattern():
-    dossier = _dossier(
-        tool_errors=[
-            {
-                "tool_name": "Bash",
-                "command_or_input": "ls",
-                "error_output": "Exit code 1",
-                "exit_code": 1,
-            }
-        ]
-    )
-    block = synthesize_offline_memory_block(dossier)
-    directives = _section(block, "### 3. Directives for CLAUDE.md")
-    assert "- None detected." in directives
-    assert "Maintain strict idempotency" not in directives
 
 
-def test_test_runner_scratch_excluded_from_blind_alleys():
-    dossier = _dossier(scratchpad_files=["g3-accept/lock", "rewrite-check/projects/x.jsonl"])
-    block = synthesize_offline_memory_block(dossier)
-    blind = _section(block, "### 2. Blind Alleys & Discarded Spikes")
-    assert "No ephemeral scratchpads recorded." in blind
 
 
-def test_scratch_outside_test_runs_is_kept():
-    dossier = _dossier(scratchpad_files=["planning-backup/notes.md", "g3-accept/lock", "docs/g3-accept-notes.md"])
-    block = synthesize_offline_memory_block(dossier)
-    blind = _section(block, "### 2. Blind Alleys & Discarded Spikes")
-    assert "planning-backup/notes.md" in blind
-    assert "docs/g3-accept-notes.md" in blind
-    assert "g3-accept/lock" not in blind
 
 
-def test_friction_line_shows_real_error_text():
-    # First output line is a bare exit code; the real error is on the second line.
-    dossier = _dossier(
-        tool_errors=[
-            {
-                "tool_name": "Bash",
-                "command_or_input": "pytest tests/x.py",
-                "error_output": "Exit code 2\nFAILED tests/x.py::test_y - AssertionError",
-                "exit_code": 2,
-            }
-        ]
-    )
-    block = synthesize_offline_memory_block(dossier)
-    friction = _section(block, "### 1. Tool / Skill Friction")
-    assert "FAILED tests/x.py::test_y - AssertionError" in friction
 
 
-def test_friction_entry_without_error_marker_is_dropped():
-    dossier = _dossier(
-        tool_errors=[
-            {
-                "tool_name": "Bash",
-                "command_or_input": "make build",
-                "error_output": "Exit code 2\nsome code line",
-                "exit_code": 2,
-            }
-        ]
-    )
-    block = synthesize_offline_memory_block(dossier)
-    friction = _section(block, "### 1. Tool / Skill Friction")
-    assert "- None detected." in friction
-    assert "Exit code 2" not in friction
-    assert "some code line" not in friction
 
 
 # --- LLM request settings and endpoint defaults (orchestration 9, T9.1.1) ----------------
@@ -392,19 +336,17 @@ def test_resolve_llm_settings_no_endpoint_is_none(monkeypatch):
     assert resolve_llm_settings(args)[0] is None
 
 
-# --- Session objective line in the offline block (orchestration 9, T9.2.1) -------------
+# --- Session objective line (orchestration 9, T9.2.1) -------------
 
 
 def test_objective_is_first_real_request():
-    block = synthesize_offline_memory_block(
-        _dossier(user_prompts=["hi", "Build the scan report and check it"])
-    )
+    block = frame_llm_block(_dossier(user_prompts=["hi", "Build the scan report and check it"]), LLM_SECTIONS)
     assert "**Objective:** Build the scan report and check it" in block
 
 
 def test_objective_truncated_to_300_chars_with_ellipsis():
     long_prompt = "word " * 100  # 500 characters
-    block = synthesize_offline_memory_block(_dossier(user_prompts=[long_prompt]))
+    block = frame_llm_block(_dossier(user_prompts=[long_prompt]), LLM_SECTIONS)
     line = next(text_line for text_line in block.splitlines() if text_line.startswith("**Objective:**"))
     text = line[len("**Objective:** "):]
     assert text.endswith("…")
@@ -412,15 +354,24 @@ def test_objective_truncated_to_300_chars_with_ellipsis():
 
 
 def test_objective_not_captured_when_no_prompts():
-    block = synthesize_offline_memory_block(_dossier(user_prompts=[]))
+    block = frame_llm_block(_dossier(user_prompts=[]), LLM_SECTIONS)
     assert "**Objective:** not captured." in block
     assert block.count("### ") == 3
+
+
+def test_objective_unwraps_slash_command_and_skips_bare_ones():
+    prompts = [
+        "<command-name>/clear</command-name>\n<command-message>clear</command-message>\n<command-args></command-args>",
+        "<command-message>wave-orchestration</command-message>\n<command-name>/wave-orchestration</command-name>\n<command-args>run plan 11</command-args>",
+    ]
+    block = frame_llm_block(_dossier(user_prompts=prompts), LLM_SECTIONS)
+    assert "**Objective:** /wave-orchestration run plan 11" in block
 
 
 # --- LLM blocks carry the title and objective (orchestration 10) ------------------------
 
 
-def test_llm_block_gets_title_and_objective(tmp_path, monkeypatch):
+def test_llm_block_gets_title_and_objective(tmp_path, monkeypatch, fake_llm):
     root = tmp_path / "memories"
     _write_dossier(root, "-slug-a", "abcdef12-3456", _dossier(slug="-slug-a", user_prompts=["Ship the memory report today"]))
     llm_text = "### 1. Tool / Skill Friction\n- None detected.\n\n### 2. Blind Alleys & Discarded Spikes\n- None.\n\n### 3. Directives for CLAUDE.md\n- Check the report.\n"

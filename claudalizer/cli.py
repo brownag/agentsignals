@@ -129,7 +129,9 @@ def handle_scan(args: argparse.Namespace) -> int:
         _notify_batch(dossiers)
     print(format_skip_summary(miner.skipped))
 
-    if args.auto_distill and dossiers:
+    if args.auto_distill and dossiers and not resolve_llm_settings(args)[0]:
+        logger.warning("No LLM endpoint set (--llm-endpoint or CLAUDALIZER_LLM_ENDPOINT); memories are not distilled.")
+    elif args.auto_distill and dossiers:
         logger.info("Running automatic distillation on mined sessions...")
         distiller = MemoryDistiller(memories_root=Path(args.memories_root))
         for d in dossiers:
@@ -145,6 +147,9 @@ def handle_scan(args: argparse.Namespace) -> int:
 
 
 def handle_distill(args: argparse.Namespace) -> int:
+    if not resolve_llm_settings(args)[0]:
+        logger.error("No LLM endpoint set (--llm-endpoint or CLAUDALIZER_LLM_ENDPOINT); memories are not distilled.")
+        return 2
     distiller = MemoryDistiller(memories_root=Path(args.memories_root))
     logger.info(f"Distilling sessions from {args.memories_root}...")
 
@@ -175,6 +180,9 @@ def handle_watch(args: argparse.Namespace) -> int:
         sources=build_sources(args, watch=True),
     )
     distiller = MemoryDistiller(memories_root=Path(args.memories_root)) if args.auto_distill else None
+    if distiller and not resolve_llm_settings(args)[0]:
+        logger.warning("No LLM endpoint set (--llm-endpoint or CLAUDALIZER_LLM_ENDPOINT); memories are not distilled.")
+        distiller = None
 
     latest_state = None
     try:

@@ -370,9 +370,9 @@ def test_watch_rechecks_while_family_unsettled(tmp_path, monkeypatch):
     assert len(calls) == 2
 
 
-def test_opencode_dossier_distills_offline(tmp_path):
+def test_opencode_dossier_distills(tmp_path, fake_llm):
     from claudalizer.distiller import MemoryDistiller
     db = _family(tmp_path)
     _miner(tmp_path, db.path).scan_and_mine()
-    res = MemoryDistiller(memories_root=tmp_path / "mem").distill_session("-work-proj", "a")
+    res = MemoryDistiller(memories_root=tmp_path / "mem").distill_session("-work-proj", "a", llm_endpoint="http://127.0.0.1:9/v1")
     assert res is not None and res.name == "memory.md" and res.exists()
