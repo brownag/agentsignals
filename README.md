@@ -142,6 +142,35 @@ Scan state is stored separately from the temporary Waybar payload in `<memories-
 
 ---
 
+## Memory history
+
+Mined memories live in `~/.claude-mined-memories/`. That directory is a git repository, so every change to it can be undone. Git is on by default for `scan`, `distill` and `watch`.
+
+- **Baseline.** The first pass that finds no `.git` creates the repository and commits the existing tree as `baseline: existing memories`.
+- **One commit per pass.** A scan or distill run that writes files makes one commit. A run that changes nothing makes no commit:
+
+  ```text
+  $ git -C ~/.claude-mined-memories log --oneline | head -4
+  3f2a91c distill: 2 distilled
+  9b0c5e1 scan: 1 mined, 1 re-mined (--force)
+  4d7e2a8 external: changes found before scan
+  1a6f3b0 baseline: existing memories
+  ```
+
+- **External changes.** If the tree is dirty when a pass starts, for example after a hand edit, it is committed first as `external: changes found before <pass>`. Whatever the pass then overwrites stays recoverable.
+- **Restore a file.** Find the revision, then check it out:
+
+  ```bash
+  git -C ~/.claude-mined-memories log --oneline -- <slug>/<session-id>/dossier.json
+  git -C ~/.claude-mined-memories checkout <rev> -- <slug>/<session-id>/dossier.json
+  ```
+
+- **Ignored files.** `scan_status.json` and temporary files (`*.tmp`, `.PROJECT_MEMORY.*.tmp`) are not committed.
+- **Turn it off.** Pass the global `--no-git` flag, for example `claudalizer --no-git scan`.
+- **Commit identity.** Commits use `claudalizer <claudalizer@localhost>`, whatever your global git config says.
+
+An unchanged re-mine does not rewrite `dossier.json`. `watch` re-mines a session at most once every 60 seconds. A re-mine skipped for that reason is counted as "re-mined less than 60 s ago" in the scan summary. `scan` is not throttled.
+
 ## Running Tests
 
 ```bash

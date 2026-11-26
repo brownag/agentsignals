@@ -161,7 +161,7 @@ class SessionSource(Protocol):
 Core loop, run once per scan under the one lock, for each enabled source in order (`claude_code`, then `opencode`):
 
 1. If debounce is on and `ref.settled` is false, record `<slug>/<session_id>` in `skipped["active"]` and skip it.
-2. If `dossier.json` exists, `force` is off, and `ref.changed_at <= dossier.json` mtime, count it in `skipped["up_to_date"]` and skip it.
+2. If `dossier.json` exists, `force` is off, and it is younger than `min_remine_seconds` (watch: 60 s), count it in `skipped["recent"]` and skip it. Otherwise, if `ref.changed_at <= dossier.json` mtime, count it in `skipped["up_to_date"]` and skip it.
 3. Call `extract`. If `scratchpad_dir` is set, snapshot it as before. Apply the no-content rule as before; `touched_files` alone does not count as content.
 4. Write the dossier atomically.
 
@@ -308,10 +308,25 @@ Use argparse with the following subcommands:
 - `claudalizer [--memories-root <path>] watch [--interval 3] [--history-limit <non-negative integer>] [--notify] [--auto-distill | --no-auto-distill]`
   - `watch` distills mined sessions by default; `--no-auto-distill` turns this off.
 - `claudalizer install-systemd [--dry-run]`
+- Global flags (G_mem-git): `--no-git` turns off the memory history described in "Memory history (G_mem-git)" below. It is on by default.
 - Global flags (G_opencode): `--source <list>`, a comma-separated subset of `claude,opencode`, default `claude,opencode`. An unknown name is an argparse error. `--opencode-db <path>` has no default in argparse; when it is unset, the path is resolved as in §3.1 *opencode source*.
 
 > * watch: Uses a loop with os.stat or file descriptor notifications and acquires /tmp/claudalizer.lock via fcntl.flock(fd, fcntl.LOCK\_EX \| fcntl.LOCK\_NB) to ensure single-instance safety.  
 > * install-systemd: Emits units to \~/.config/systemd/user/ and calls systemctl \--user daemon-reload.
+
+#### **Memory history (G_mem-git)**
+
+`claudalizer/memory_git.py` makes the memories root a git repository. Rules:
+
+- **D2.** One commit per scan pass or distill run that changed files. A pass with no change makes no commit.
+- **D3.** `watch` passes `min_remine_seconds = 60` (`WATCH_MIN_REMINE_SECONDS`). A session whose dossier is younger than that is skipped and counted under `"recent"`. `scan` is not throttled. The 2 s settle window is unchanged.
+- **D4.** Git is on by default. The first pass that finds no `.git` runs `git init -b main`, writes `.gitignore` (`scan_status.json`, `*.tmp`, `.PROJECT_MEMORY.*.tmp`), and commits the existing tree as `baseline: existing memories`. `--no-git` turns this off.
+- **D5.** A dirty tree at the start of a pass is committed first as `external: changes found before <pass>`.
+- **D6.** Commits use the identity `claudalizer <claudalizer@localhost>`. Git runs with `commit.gpgsign=false`, `core.hooksPath=/dev/null` and `core.excludesFile=/dev/null`, and with every `GIT_*` variable removed from the environment. Git errors are logged and never raised. A missing `git` binary warns once per process.
+- **D9.** A re-mine that changes nothing does not rewrite `dossier.json`. "Unchanged" means the new dossier dict equals the stored one with `scan_timestamp` removed, and the scratchpad copies' bytes did not change. The file's mtime is then bumped with `os.utime`. `force` always writes.
+- **D10.** `file_lock` is never nested. The miner commits inside the lock `scan_and_mine` already holds. The distiller takes the lock only around its writes and its pass commit, never around the LLM call.
+- **Commit titles.** `scan: <n> mined, <m> re-mined` (with ` (--force)` when forced) and `distill: <n> distilled` (with ` (--force)` when any entry is forced). The body lists one `mined`, `re-mined`, `re-mined (--force)`, `distilled` or `re-distilled (--force)` line per session.
+- **Tests.** `tests/conftest.py` sets `CLAUDALIZER_TESTING=1`. While it is set, `MemoryRepo` refuses the real memories root.
 
 ## **4\. Test Suite Requirements (tests/)**
 
